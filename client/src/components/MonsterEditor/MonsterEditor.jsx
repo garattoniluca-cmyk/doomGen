@@ -31,7 +31,6 @@ const DEFAULT_STATE = () => ({
 
 const uid = () => Math.random().toString(36).slice(2,8)
 const newPart = () => ({ id:uid(), label:'Parte', shape:'box', w:0.5, h:0.5, d:0.5, r:0.25, x:0, y:0.25, z:0, rx:0, ry:0, rz:0, color:'#cc2200' })
-
 const BEHAVIORS = ['patrol','chase','shoot','ambush','stationary']
 const SHAPE_ICONS = { box:'□', sphere:'○', cylinder:'⊙', cone:'△' }
 
@@ -55,16 +54,8 @@ export default function MonsterEditor() {
   useEffect(() => { loadMonsters() }, [loadMonsters])
 
   const selectMonster = (m) => {
-    setEditing({
-      id:m.id, name:m.name,
-      health:m.health, speed:m.speed, damage:m.damage, behavior:m.behavior,
-      sight_range:m.sight_range??10, attack_range:m.attack_range??2,
-      resistances:m.resistances || {fire:0,ice:0,bullet:0},
-      geometry:m.geometry || {v:1,parts:[]},
-      lore:m.lore||'',
-    })
-    setThumbnail(m.thumbnail||null)
-    setTab('stats'); setExpandedPart(null)
+    setEditing({ id:m.id, name:m.name, health:m.health, speed:m.speed, damage:m.damage, behavior:m.behavior, sight_range:m.sight_range??10, attack_range:m.attack_range??2, resistances:m.resistances||{fire:0,ice:0,bullet:0}, geometry:m.geometry||{v:1,parts:[]}, lore:m.lore||'' })
+    setThumbnail(m.thumbnail||null); setTab('stats'); setExpandedPart(null)
   }
 
   const newMonster = () => { setEditing(DEFAULT_STATE()); setThumbnail(null); setTab('stats'); setExpandedPart(null) }
@@ -94,35 +85,24 @@ export default function MonsterEditor() {
     await loadMonsters()
   }
 
-  const set    = (k, v) => setEditing(e => ({...e, [k]:v}))
-  const setRes = (k, v) => setEditing(e => ({...e, resistances:{...e.resistances,[k]:v}}))
-  const setPart = (id, changes) => setEditing(e => ({...e, geometry:{...e.geometry, parts:e.geometry.parts.map(p => p.id===id ? {...p,...changes} : p)}}))
+  const set     = (k, v) => setEditing(e => ({...e, [k]:v}))
+  const setRes  = (k, v) => setEditing(e => ({...e, resistances:{...e.resistances,[k]:v}}))
+  const setPart = (id, ch) => setEditing(e => ({...e, geometry:{...e.geometry, parts:e.geometry.parts.map(p => p.id===id?{...p,...ch}:p)}}))
   const addPart = () => { const p=newPart(); setEditing(e=>({...e,geometry:{...e.geometry,parts:[...e.geometry.parts,p]}})); setExpandedPart(p.id) }
   const delPart = (id) => { setEditing(e=>({...e,geometry:{...e.geometry,parts:e.geometry.parts.filter(p=>p.id!==id)}})); if(expandedPart===id) setExpandedPart(null) }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100%', fontFamily:'Courier New, monospace', background:'#080604' }}>
+    <div style={{ display:'flex', flexDirection:'column', height:'100%', fontFamily:'Courier New, monospace', background:'#060402' }}>
       <PageHeader title="Editor Mostri" />
 
-      {editing && (
-        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 14px', background:'#0a0805', borderBottom:'1px solid #1a0a00', flexShrink:0 }}>
-          <input value={editing.name} onChange={e=>set('name',e.target.value)}
-            style={{ flex:1, maxWidth:220, background:'#110800', border:'1px solid #2a1000', color:'#cc8844', fontFamily:'monospace', fontSize:12, padding:'4px 8px', outline:'none', letterSpacing:1 }} />
-          <button onClick={saveMonster} disabled={saving} style={{ background:'#aa1c00', border:'none', color:'#fff', fontFamily:'monospace', fontSize:10, letterSpacing:2, padding:'5px 16px', cursor:'pointer', opacity:saving?0.6:1 }}>
-            {saving ? '...' : (editing.id ? 'AGGIORNA' : 'SALVA')}
-          </button>
-          {editing.id && (
-            <button onClick={()=>deleteMonster(editing.id)} style={{ background:'transparent', border:'1px solid #441100', color:'#663300', fontFamily:'monospace', fontSize:10, padding:'5px 10px', cursor:'pointer' }}>ELIMINA</button>
-          )}
-          <button onClick={()=>setEditing(null)} style={{ marginLeft:'auto', background:'transparent', border:'1px solid #221208', color:'#332211', fontFamily:'monospace', fontSize:11, padding:'4px 8px', cursor:'pointer' }}>✕</button>
-        </div>
-      )}
-
+      {/* ── 3-column layout ── */}
       <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
-        {/* ── Left panel ── */}
-        <div style={{ width:248, background:'#060402', borderRight:'1px solid #1a0a00', display:'flex', flexDirection:'column', flexShrink:0 }}>
+
+        {/* ── LEFT: monster list ── */}
+        <div style={{ width:230, background:'#060402', borderRight:'1px solid #1a0a00', display:'flex', flexDirection:'column', flexShrink:0 }}>
           <div style={{ padding:'10px', borderBottom:'1px solid #1a0a00' }}>
-            <button onClick={newMonster} style={{ width:'100%', background:'#150400', border:'1px solid #881500', color:'#cc3300', fontFamily:'monospace', fontSize:10, letterSpacing:3, padding:'8px', cursor:'pointer' }}
+            <button onClick={newMonster}
+              style={{ width:'100%', background:'#150400', border:'1px solid #881500', color:'#cc3300', fontFamily:'monospace', fontSize:10, letterSpacing:3, padding:'8px', cursor:'pointer' }}
               onMouseEnter={e=>Object.assign(e.currentTarget.style,{background:'#220600',borderColor:'#cc2200'})}
               onMouseLeave={e=>Object.assign(e.currentTarget.style,{background:'#150400',borderColor:'#881500'})}>
               + NUOVO MOSTRO
@@ -134,30 +114,61 @@ export default function MonsterEditor() {
           </div>
         </div>
 
-        {/* ── Center ── */}
-        <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        {/* ── CENTER: 3D scene (full height) ── */}
+        <div style={{ flex:1, overflow:'hidden' }}>
           {!editing ? (
-            <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'#1a0800', fontSize:11, letterSpacing:3, textAlign:'center' }}>
+            <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', background:'#3a7aaa', color:'#1a3a5a', fontSize:11, letterSpacing:3, textAlign:'center' }}>
               SELEZIONA UN MOSTRO<br/>O CREANE UNO NUOVO
             </div>
           ) : (
+            <MonsterViewer geometry={editing.geometry} onThumbnailCapture={setThumbnail} />
+          )}
+        </div>
+
+        {/* ── RIGHT: inspector (Unity-style) ── */}
+        <div style={{ width:310, background:'#0a0705', borderLeft:'1px solid #1a0a00', display:'flex', flexDirection:'column', flexShrink:0 }}>
+          {!editing ? (
+            <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', color:'#1e0c04', fontSize:10, letterSpacing:2, textAlign:'center' }}>
+              INSPECTOR
+            </div>
+          ) : (
             <>
-              <div style={{ flex:1, minHeight:0 }}>
-                <MonsterViewer geometry={editing.geometry} onThumbnailCapture={setThumbnail} />
+              {/* Name + actions */}
+              <div style={{ padding:'10px 12px', borderBottom:'1px solid #1a0a00', flexShrink:0 }}>
+                <input value={editing.name} onChange={e=>set('name',e.target.value)}
+                  style={{ width:'100%', boxSizing:'border-box', background:'#110800', border:'1px solid #331500', color:'#cc8844', fontFamily:'monospace', fontSize:12, padding:'5px 8px', outline:'none', letterSpacing:1, marginBottom:8 }} />
+                <div style={{ display:'flex', gap:6 }}>
+                  <button onClick={saveMonster} disabled={saving}
+                    style={{ flex:1, background:'#aa1c00', border:'none', color:'#fff', fontFamily:'monospace', fontSize:10, letterSpacing:2, padding:'6px 0', cursor:'pointer', opacity:saving?0.6:1 }}>
+                    {saving ? '...' : (editing.id ? 'AGGIORNA' : 'SALVA')}
+                  </button>
+                  {editing.id && (
+                    <button onClick={()=>deleteMonster(editing.id)}
+                      style={{ background:'transparent', border:'1px solid #441100', color:'#663300', fontFamily:'monospace', fontSize:10, padding:'6px 10px', cursor:'pointer' }}>
+                      ×
+                    </button>
+                  )}
+                  <button onClick={()=>setEditing(null)}
+                    style={{ background:'transparent', border:'1px solid #221208', color:'#332211', fontFamily:'monospace', fontSize:11, padding:'6px 8px', cursor:'pointer' }}>
+                    ✕
+                  </button>
+                </div>
               </div>
-              <div style={{ height:265, borderTop:'1px solid #1a0a00', display:'flex', flexDirection:'column', flexShrink:0, background:'#080604' }}>
-                <div style={{ display:'flex', borderBottom:'1px solid #1a0a00', flexShrink:0 }}>
-                  {[['stats','STATISTICHE'],['geometry','GEOMETRIA'],['json','JSON']].map(([t,l]) => (
-                    <div key={t} onClick={()=>setTab(t)} style={{ padding:'5px 16px', fontSize:9, letterSpacing:2, cursor:'pointer', color:tab===t?'#cc4400':'#331500', borderBottom:tab===t?'2px solid #cc2200':'2px solid transparent', background:tab===t?'#110600':'transparent' }}>
-                      {l}
-                    </div>
-                  ))}
-                </div>
-                <div style={{ flex:1, overflowY:'auto', padding:'10px 14px' }}>
-                  {tab==='stats'    && <StatsTab editing={editing} set={set} setRes={setRes} />}
-                  {tab==='geometry' && <GeometryTab parts={editing.geometry?.parts||[]} expandedPart={expandedPart} setExpandedPart={setExpandedPart} onAdd={addPart} onDelete={delPart} onUpdate={setPart} />}
-                  {tab==='json'     && <JSONTab editing={editing} />}
-                </div>
+
+              {/* Tab bar */}
+              <div style={{ display:'flex', borderBottom:'1px solid #1a0a00', flexShrink:0 }}>
+                {[['stats','STATS'],['geometry','GEO'],['json','JSON']].map(([t,l]) => (
+                  <div key={t} onClick={()=>setTab(t)} style={{ flex:1, padding:'7px 0', fontSize:9, letterSpacing:2, cursor:'pointer', textAlign:'center', color:tab===t?'#cc4400':'#331500', borderBottom:tab===t?'2px solid #cc2200':'2px solid transparent', background:tab===t?'#130700':'transparent' }}>
+                    {l}
+                  </div>
+                ))}
+              </div>
+
+              {/* Tab content */}
+              <div style={{ flex:1, overflowY:'auto', padding:'12px' }}>
+                {tab==='stats'    && <StatsTab    editing={editing} set={set} setRes={setRes} />}
+                {tab==='geometry' && <GeometryTab parts={editing.geometry?.parts||[]} expandedPart={expandedPart} setExpandedPart={setExpandedPart} onAdd={addPart} onDelete={delPart} onUpdate={setPart} />}
+                {tab==='json'     && <JSONTab     editing={editing} />}
               </div>
             </>
           )}
@@ -170,13 +181,12 @@ export default function MonsterEditor() {
 // ── Monster card ──────────────────────────────────────────────────────────────
 function MonsterCard({ monster, selected, onClick, onDelete }) {
   return (
-    <div onClick={onClick} style={{ border:`1px solid ${selected?'#cc2200':'#1a0900'}`, background:selected?'#180500':'#0a0503', padding:'7px 8px', marginBottom:5, cursor:'pointer', display:'flex', gap:8, alignItems:'center', position:'relative' }}
+    <div onClick={onClick}
+      style={{ border:`1px solid ${selected?'#cc2200':'#1a0900'}`, background:selected?'#180500':'#0a0503', padding:'7px 8px', marginBottom:5, cursor:'pointer', display:'flex', gap:8, alignItems:'center', position:'relative' }}
       onMouseEnter={e=>{ if(!selected) e.currentTarget.style.borderColor='#441500' }}
       onMouseLeave={e=>{ if(!selected) e.currentTarget.style.borderColor='#1a0900' }}>
       <div style={{ width:54, height:40, background:'#0c0805', border:'1px solid #1a0a00', flexShrink:0, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center' }}>
-        {monster.thumbnail
-          ? <img src={monster.thumbnail} style={{ width:'100%', height:'100%', objectFit:'cover' }} alt="" />
-          : <span style={{ color:'#2a1000', fontSize:18 }}>☠</span>}
+        {monster.thumbnail ? <img src={monster.thumbnail} style={{ width:'100%', height:'100%', objectFit:'cover' }} alt="" /> : <span style={{ color:'#2a1000', fontSize:18 }}>☠</span>}
       </div>
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ color:selected?'#ff4400':'#cc6633', fontSize:11, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', letterSpacing:1 }}>{monster.name}</div>
@@ -192,27 +202,28 @@ function MonsterCard({ monster, selected, onClick, onDelete }) {
 function StatsTab({ editing, set, setRes }) {
   const r = editing.resistances || {}
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'5px 20px' }}>
-        <Slider label={`VITA (${editing.health})`}          value={editing.health}       min={1}  max={500} color='#cc4400' onChange={v=>set('health',v)} />
-        <Slider label={`VELOCITÀ (${editing.speed}/20)`}    value={editing.speed}        min={1}  max={20}  color='#ffcc00' onChange={v=>set('speed',v)} />
-        <Slider label={`DANNO (${editing.damage})`}         value={editing.damage}       min={1}  max={200} color='#cc0000' onChange={v=>set('damage',v)} />
-        <Slider label={`VISUALE (${editing.sight_range}m)`} value={editing.sight_range}  min={1}  max={30}  color='#4488cc' onChange={v=>set('sight_range',v)} />
-        <Slider label={`ATTACCO (${editing.attack_range}m)`}value={editing.attack_range} min={1}  max={10}  color='#cc8800' onChange={v=>set('attack_range',v)} />
-      </div>
-      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-        <span style={{ color:'#442211', fontSize:9, letterSpacing:2 }}>COMPORTAMENTO</span>
-        <select value={editing.behavior} onChange={e=>set('behavior',e.target.value)} style={{ background:'#0f0a05', border:'1px solid #2a1000', color:'#cc8844', fontFamily:'monospace', fontSize:10, padding:'3px 6px', outline:'none' }}>
+    <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+      <Slider label={`VITA (${editing.health})`}           value={editing.health}       min={1}  max={500} color='#cc4400' onChange={v=>set('health',v)} />
+      <Slider label={`VELOCITÀ (${editing.speed}/20)`}     value={editing.speed}        min={1}  max={20}  color='#ffcc00' onChange={v=>set('speed',v)} />
+      <Slider label={`DANNO (${editing.damage})`}          value={editing.damage}       min={1}  max={200} color='#cc0000' onChange={v=>set('damage',v)} />
+      <Slider label={`VISUALE (${editing.sight_range}m)`}  value={editing.sight_range}  min={1}  max={30}  color='#4488cc' onChange={v=>set('sight_range',v)} />
+      <Slider label={`ATTACCO (${editing.attack_range}m)`} value={editing.attack_range} min={1}  max={10}  color='#cc8800' onChange={v=>set('attack_range',v)} />
+
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginTop:2 }}>
+        <span style={{ color:'#442211', fontSize:10, letterSpacing:1 }}>COMPORTAMENTO</span>
+        <select value={editing.behavior} onChange={e=>set('behavior',e.target.value)}
+          style={{ flex:1, background:'#110800', border:'1px solid #331500', color:'#cc8844', fontFamily:'monospace', fontSize:11, padding:'4px 6px', outline:'none' }}>
           {BEHAVIORS.map(b => <option key={b} value={b}>{b}</option>)}
         </select>
       </div>
-      <div style={{ borderTop:'1px solid #1a0a00', paddingTop:6 }}>
-        <div style={{ color:'#331500', fontSize:9, letterSpacing:2, marginBottom:4 }}>RESISTENZE</div>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'4px 10px' }}>
-          <Slider label={`FUOCO (${r.fire||0}%)`}        value={r.fire||0}   min={0} max={100} color='#ff4400' onChange={v=>setRes('fire',v)} />
-          <Slider label={`GHIACCIO (${r.ice||0}%)`}      value={r.ice||0}    min={0} max={100} color='#44aaff' onChange={v=>setRes('ice',v)} />
-          <Slider label={`PROIETTILE (${r.bullet||0}%)`} value={r.bullet||0} min={0} max={100} color='#88aa44' onChange={v=>setRes('bullet',v)} />
-        </div>
+
+      <div style={{ borderTop:'1px solid #1a0a00', paddingTop:10, marginTop:4 }}>
+        <div style={{ color:'#331500', fontSize:10, letterSpacing:2, marginBottom:8 }}>RESISTENZE</div>
+        <Slider label={`FUOCO (${r.fire||0}%)`}        value={r.fire||0}   min={0} max={100} color='#ff4400' onChange={v=>setRes('fire',v)} />
+        <div style={{ marginTop:8 }} />
+        <Slider label={`GHIACCIO (${r.ice||0}%)`}      value={r.ice||0}    min={0} max={100} color='#44aaff' onChange={v=>setRes('ice',v)} />
+        <div style={{ marginTop:8 }} />
+        <Slider label={`PROIETTILE (${r.bullet||0}%)`} value={r.bullet||0} min={0} max={100} color='#88aa44' onChange={v=>setRes('bullet',v)} />
       </div>
     </div>
   )
@@ -221,8 +232,9 @@ function StatsTab({ editing, set, setRes }) {
 function Slider({ label, value, min, max, color, onChange }) {
   return (
     <div>
-      <div style={{ color:'#442211', fontSize:9, letterSpacing:1, marginBottom:2 }}>{label}</div>
-      <input type="range" min={min} max={max} value={value} onChange={e=>onChange(Number(e.target.value))} style={{ width:'100%', accentColor:color, cursor:'pointer' }} />
+      <div style={{ color:'#553322', fontSize:10, letterSpacing:1, marginBottom:3 }}>{label}</div>
+      <input type="range" min={min} max={max} value={value} onChange={e=>onChange(Number(e.target.value))}
+        style={{ width:'100%', accentColor:color, cursor:'pointer' }} />
     </div>
   )
 }
@@ -231,15 +243,18 @@ function Slider({ label, value, min, max, color, onChange }) {
 function GeometryTab({ parts, expandedPart, setExpandedPart, onAdd, onDelete, onUpdate }) {
   return (
     <div>
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:7 }}>
-        <span style={{ color:'#331500', fontSize:9, letterSpacing:2 }}>{parts.length} PARTI</span>
-        <button onClick={onAdd} style={{ background:'#150400', border:'1px solid #553300', color:'#cc6622', fontFamily:'monospace', fontSize:9, letterSpacing:1, padding:'3px 10px', cursor:'pointer' }}>+ AGGIUNGI</button>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+        <span style={{ color:'#442211', fontSize:10, letterSpacing:2 }}>{parts.length} PARTI</span>
+        <button onClick={onAdd}
+          style={{ background:'#1a0500', border:'1px solid #663300', color:'#cc6622', fontFamily:'monospace', fontSize:10, letterSpacing:1, padding:'4px 12px', cursor:'pointer' }}>
+          + AGGIUNGI
+        </button>
       </div>
       {parts.map(part => (
         <PartRow key={part.id} part={part}
           expanded={expandedPart===part.id}
           onToggle={()=>setExpandedPart(expandedPart===part.id ? null : part.id)}
-          onUpdate={changes=>onUpdate(part.id,changes)}
+          onUpdate={ch=>onUpdate(part.id,ch)}
           onDelete={()=>onDelete(part.id)} />
       ))}
     </div>
@@ -248,52 +263,85 @@ function GeometryTab({ parts, expandedPart, setExpandedPart, onAdd, onDelete, on
 
 function PartRow({ part, expanded, onToggle, onUpdate, onDelete }) {
   return (
-    <div style={{ marginBottom:2, border:`1px solid ${expanded?'#2a1000':'#160800'}`, background:expanded?'#110700':'#0a0503' }}>
-      <div onClick={onToggle} style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 8px', cursor:'pointer', userSelect:'none' }}>
-        <span style={{ color:'#331500', fontSize:9, width:8 }}>{expanded?'▼':'▶'}</span>
-        <span style={{ color:'#441800', fontSize:12 }}>{SHAPE_ICONS[part.shape]||'?'}</span>
-        <div style={{ width:10, height:10, background:part.color, border:'1px solid #33000066', flexShrink:0 }} />
-        <span style={{ flex:1, color:'#886644', fontSize:10, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{part.label}</span>
-        <span style={{ color:'#2a1000', fontSize:8, fontFamily:'monospace' }}>{(part.x||0).toFixed(1)},{(part.y||0).toFixed(1)},{(part.z||0).toFixed(1)}</span>
-        <button onClick={e=>{e.stopPropagation();onDelete()}} style={{ background:'transparent', border:'none', color:'#441100', cursor:'pointer', fontSize:13, lineHeight:1, padding:'0 2px' }}>×</button>
+    <div style={{ marginBottom:3, border:`1px solid ${expanded?'#3a1500':'#1e0900'}`, background:expanded?'#120800':'#0c0503' }}>
+      <div onClick={onToggle} style={{ display:'flex', alignItems:'center', gap:7, padding:'6px 8px', cursor:'pointer', userSelect:'none' }}>
+        <span style={{ color:'#442211', fontSize:10, width:10 }}>{expanded?'▼':'▶'}</span>
+        <span style={{ color:'#553322', fontSize:14 }}>{SHAPE_ICONS[part.shape]||'?'}</span>
+        <div style={{ width:13, height:13, background:part.color, border:'1px solid #33000066', flexShrink:0 }} />
+        <span style={{ flex:1, color:'#996644', fontSize:11, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{part.label}</span>
+        <span style={{ color:'#331500', fontSize:9, fontFamily:'monospace', flexShrink:0 }}>
+          {(part.x||0).toFixed(2)},{(part.y||0).toFixed(2)},{(part.z||0).toFixed(2)}
+        </span>
+        <button onClick={e=>{e.stopPropagation();onDelete()}} style={{ background:'transparent', border:'none', color:'#551100', cursor:'pointer', fontSize:15, lineHeight:1, padding:'0 3px', flexShrink:0 }}>×</button>
       </div>
-      {expanded && <div style={{ padding:'8px 12px 10px', borderTop:'1px solid #1a0800' }}><PartEditor part={part} onChange={onUpdate} /></div>}
+      {expanded && (
+        <div style={{ padding:'10px 12px 12px', borderTop:'1px solid #1e0900' }}>
+          <PartEditor part={part} onChange={onUpdate} />
+        </div>
+      )}
     </div>
   )
 }
 
 function PartEditor({ part, onChange }) {
   const Num = ({ label, k, step=0.05 }) => (
-    <label style={{ display:'flex', alignItems:'center', gap:3 }}>
-      <span style={{ color:'#441800', fontSize:8, minWidth:14 }}>{label}</span>
-      <input type="number" step={step} value={+(part[k]??0).toFixed(3)} onChange={e=>onChange({[k]:parseFloat(e.target.value)||0})}
-        style={{ width:52, background:'#0c0603', border:'1px solid #1e0a00', color:'#cc8844', fontFamily:'monospace', fontSize:9, padding:'2px 4px', outline:'none', textAlign:'right' }} />
+    <label style={{ display:'flex', flexDirection:'column', gap:2 }}>
+      <span style={{ color:'#664422', fontSize:10, letterSpacing:1 }}>{label}</span>
+      <input type="number" step={step}
+        value={+(part[k]??0).toFixed(3)}
+        onChange={e=>onChange({[k]:parseFloat(e.target.value)||0})}
+        style={{ width:'100%', background:'#0e0603', border:'1px solid #2a1000', color:'#ffaa66', fontFamily:'monospace', fontSize:12, padding:'4px 6px', outline:'none', textAlign:'right', boxSizing:'border-box' }}
+      />
     </label>
   )
+
+  const Row = ({ children }) => (
+    <div style={{ display:'grid', gridTemplateColumns:`repeat(${children.length||1}, 1fr)`, gap:6 }}>
+      {children}
+    </div>
+  )
+
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:7 }}>
-      <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-        <input value={part.label} onChange={e=>onChange({label:e.target.value})} style={{ flex:1, background:'#0c0603', border:'1px solid #1e0a00', color:'#cc8844', fontFamily:'monospace', fontSize:10, padding:'3px 6px', outline:'none' }} />
-        <select value={part.shape} onChange={e=>onChange({shape:e.target.value})} style={{ background:'#0c0603', border:'1px solid #1e0a00', color:'#cc8844', fontFamily:'monospace', fontSize:9, padding:'3px 4px', outline:'none' }}>
-          {['box','sphere','cylinder','cone'].map(s=><option key={s} value={s}>{s}</option>)}
-        </select>
-        <input type="color" value={part.color||'#cc2200'} onChange={e=>onChange({color:e.target.value})} style={{ width:26, height:20, border:'none', padding:0, cursor:'pointer', background:'transparent' }} />
+    <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+      {/* Label + Shape + Color */}
+      <div style={{ display:'flex', gap:6, alignItems:'flex-end' }}>
+        <label style={{ flex:1, display:'flex', flexDirection:'column', gap:2 }}>
+          <span style={{ color:'#664422', fontSize:10, letterSpacing:1 }}>NOME</span>
+          <input value={part.label} onChange={e=>onChange({label:e.target.value})}
+            style={{ background:'#0e0603', border:'1px solid #2a1000', color:'#ffaa66', fontFamily:'monospace', fontSize:12, padding:'4px 6px', outline:'none', width:'100%', boxSizing:'border-box' }} />
+        </label>
+        <label style={{ display:'flex', flexDirection:'column', gap:2 }}>
+          <span style={{ color:'#664422', fontSize:10, letterSpacing:1 }}>FORMA</span>
+          <select value={part.shape} onChange={e=>onChange({shape:e.target.value})}
+            style={{ background:'#0e0603', border:'1px solid #2a1000', color:'#ffaa66', fontFamily:'monospace', fontSize:12, padding:'4px 6px', outline:'none' }}>
+            {['box','sphere','cylinder','cone'].map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+        </label>
+        <label style={{ display:'flex', flexDirection:'column', gap:2 }}>
+          <span style={{ color:'#664422', fontSize:10, letterSpacing:1 }}>COLORE</span>
+          <input type="color" value={part.color||'#cc2200'} onChange={e=>onChange({color:e.target.value})}
+            style={{ width:40, height:32, border:'1px solid #2a1000', padding:1, cursor:'pointer', background:'#0e0603' }} />
+        </label>
       </div>
+
+      {/* Dimensions */}
       <div>
-        <div style={{ color:'#2a1000', fontSize:8, letterSpacing:1, marginBottom:3 }}>DIMENSIONI</div>
-        <div style={{ display:'flex', gap:7, flexWrap:'wrap' }}>
-          {part.shape==='box'      && <><Num label="W" k="w"/><Num label="H" k="h"/><Num label="D" k="d"/></>}
-          {part.shape==='sphere'   && <Num label="R" k="r"/>}
-          {(part.shape==='cylinder'||part.shape==='cone') && <><Num label="R" k="r"/><Num label="H" k="h"/></>}
-        </div>
+        <div style={{ color:'#442211', fontSize:10, letterSpacing:2, marginBottom:6 }}>DIMENSIONI</div>
+        {part.shape==='box'      && <Row><Num label="W" k="w"/><Num label="H" k="h"/><Num label="D" k="d"/></Row>}
+        {part.shape==='sphere'   && <Row><Num label="RAGGIO" k="r"/></Row>}
+        {(part.shape==='cylinder'||part.shape==='cone') && <Row><Num label="R" k="r"/><Num label="H" k="h"/></Row>}
       </div>
+
+      {/* Position */}
       <div>
-        <div style={{ color:'#2a1000', fontSize:8, letterSpacing:1, marginBottom:3 }}>POSIZIONE</div>
-        <div style={{ display:'flex', gap:7, flexWrap:'wrap' }}><Num label="X" k="x"/><Num label="Y" k="y"/><Num label="Z" k="z"/></div>
+        <div style={{ color:'#442211', fontSize:10, letterSpacing:2, marginBottom:6 }}>POSIZIONE</div>
+        <Row><Num label="X" k="x"/><Num label="Y" k="y"/><Num label="Z" k="z"/></Row>
       </div>
+
+      {/* Rotation */}
       <div>
-        <div style={{ color:'#2a1000', fontSize:8, letterSpacing:1, marginBottom:3 }}>ROTAZIONE (°)</div>
-        <div style={{ display:'flex', gap:7, flexWrap:'wrap' }}><Num label="RX" k="rx" step={1}/><Num label="RY" k="ry" step={1}/><Num label="RZ" k="rz" step={1}/></div>
+        <div style={{ color:'#442211', fontSize:10, letterSpacing:2, marginBottom:6 }}>ROTAZIONE °</div>
+        <Row><Num label="RX" k="rx" step={1}/><Num label="RY" k="ry" step={1}/><Num label="RZ" k="rz" step={1}/></Row>
       </div>
     </div>
   )
@@ -310,7 +358,7 @@ function JSONTab({ editing }) {
     lore:editing.lore,
   }
   return (
-    <pre style={{ color:'#554422', fontSize:9, fontFamily:'monospace', whiteSpace:'pre-wrap', wordBreak:'break-all', margin:0, lineHeight:1.6 }}>
+    <pre style={{ color:'#664422', fontSize:10, fontFamily:'monospace', whiteSpace:'pre-wrap', wordBreak:'break-all', margin:0, lineHeight:1.7 }}>
       {JSON.stringify(json, null, 2)}
     </pre>
   )

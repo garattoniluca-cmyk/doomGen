@@ -1,23 +1,19 @@
 import { useEffect, useRef, useCallback } from 'react'
 import * as THREE from 'three'
 
+// Fixed thumbnail camera params (always the same angle)
+const THUMB = { theta: 0.5, phi: 0.32, r: 4.5 }
+
 function makeMesh(part) {
+  const c = (v, min = 0.02) => Math.max(min, v || 0)
   let geo
-  const clamp = (v, min = 0.01) => Math.max(min, v || 0)
   switch (part.shape) {
-    case 'sphere':
-      geo = new THREE.SphereGeometry(clamp(part.r, 0.05), 16, 12)
-      break
-    case 'cylinder':
-      geo = new THREE.CylinderGeometry(clamp(part.r, 0.05), clamp(part.r, 0.05), clamp(part.h, 0.05), 14)
-      break
-    case 'cone':
-      geo = new THREE.ConeGeometry(clamp(part.r, 0.05), clamp(part.h, 0.05), 14)
-      break
-    default: // box
-      geo = new THREE.BoxGeometry(clamp(part.w, 0.05), clamp(part.h, 0.05), clamp(part.d, 0.05))
+    case 'sphere':   geo = new THREE.SphereGeometry(c(part.r, 0.05), 16, 12); break
+    case 'cylinder': geo = new THREE.CylinderGeometry(c(part.r, 0.05), c(part.r, 0.05), c(part.h, 0.05), 14); break
+    case 'cone':     geo = new THREE.ConeGeometry(c(part.r, 0.05), c(part.h, 0.05), 14); break
+    default:         geo = new THREE.BoxGeometry(c(part.w, 0.05), c(part.h, 0.05), c(part.d, 0.05))
   }
-  const mat = new THREE.MeshLambertMaterial({ color: part.color || '#cc2200' })
+  const mat  = new THREE.MeshLambertMaterial({ color: part.color || '#cc2200' })
   const mesh = new THREE.Mesh(geo, mat)
   mesh.position.set(part.x || 0, part.y || 0, part.z || 0)
   mesh.rotation.set(
@@ -44,38 +40,41 @@ export default function MonsterViewer({ geometry, onThumbnailCapture }) {
     renderer.shadowMap.enabled = true
     el.appendChild(renderer.domElement)
 
+    // ── Scene ──
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#080604')
-    scene.fog = new THREE.FogExp2('#080604', 0.06)
+    scene.background = new THREE.Color('#3a7aaa')   // azzurro
+    scene.fog = new THREE.Fog('#3a7aaa', 18, 40)
 
-    const camera = new THREE.PerspectiveCamera(45, W / H, 0.01, 100)
+    const camera = new THREE.PerspectiveCamera(45, W / H, 0.01, 200)
 
-    // Lights
-    scene.add(new THREE.AmbientLight('#553322', 1.4))
-    const sun = new THREE.DirectionalLight('#ffddaa', 2.2)
-    sun.position.set(3, 6, 4)
+    // ── Lights ──
+    scene.add(new THREE.AmbientLight('#aaccee', 1.2))
+    const sun = new THREE.DirectionalLight('#ffffff', 2.0)
+    sun.position.set(5, 10, 6)
     sun.castShadow = true
     scene.add(sun)
-    const rim = new THREE.DirectionalLight('#cc2200', 0.7)
-    rim.position.set(-4, 1, -3)
-    scene.add(rim)
+    const fill = new THREE.DirectionalLight('#ffddaa', 0.5)
+    fill.position.set(-4, 3, -3)
+    scene.add(fill)
 
-    // Floor
-    scene.add(new THREE.GridHelper(6, 16, '#1a0800', '#100400'))
+    // ── Floor (verde grande) ──
     const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(3, 32),
-      new THREE.MeshLambertMaterial({ color: '#090503' })
+      new THREE.PlaneGeometry(30, 30),
+      new THREE.MeshLambertMaterial({ color: '#2d6a2d' })
     )
     floor.rotation.x = -Math.PI / 2
     floor.receiveShadow = true
     scene.add(floor)
 
-    // Monster group
+    // ── Grid ──
+    scene.add(new THREE.GridHelper(30, 30, '#1a4a1a', '#1a4a1a'))
+
+    // ── Monster group ──
     const group = new THREE.Group()
     scene.add(group)
 
-    // Orbit
-    const orbit = { theta: 0.5, phi: 0.32, r: 4.5, dragging: false, lx: 0, ly: 0 }
+    // ── Orbit state ──
+    const orbit = { theta: THUMB.theta, phi: THUMB.phi, r: THUMB.r, dragging: false, lx: 0, ly: 0 }
 
     let raf
     const animate = () => {
@@ -99,7 +98,7 @@ export default function MonsterViewer({ geometry, onThumbnailCapture }) {
     }
     window.addEventListener('resize', onResize)
 
-    ctx.current = { renderer, scene, camera, group, orbit }
+    ctx.current = { renderer, scene, camera, group, orbit, el }
 
     return () => {
       cancelAnimationFrame(raf)
@@ -112,42 +111,62 @@ export default function MonsterViewer({ geometry, onThumbnailCapture }) {
 
   // Rebuild monster on geometry change
   useEffect(() => {
-    const { group, renderer, scene, camera } = ctx.current
+    const { group, renderer, scene, camera, el } = ctx.current
     if (!group) return
 
     group.children.slice().forEach(c => { c.geometry?.dispose(); c.material?.dispose(); group.remove(c) })
-
     if (geometry?.parts?.length) {
       geometry.parts.forEach(part => group.add(makeMesh(part)))
     }
 
+    // Capture thumbnail from FIXED angle (always same position)
     if (onThumbnailCapture) {
       setTimeout(() => {
-        if (!renderer) return
+        if (!renderer || !el) return
+
+        const W = el.clientWidth, H = el.clientHeight
+
+        // Save current camera state
+        const savedPos = camera.position.clone()
+        const savedAspect = camera.aspect
+
+        // Set fixed thumbnail camera
+        camera.aspect = 160 / 120
+        camera.updateProjectionMatrix()
+        camera.position.set(
+          THUMB.r * Math.sin(THUMB.theta) * Math.cos(THUMB.phi),
+          THUMB.r * Math.sin(THUMB.phi),
+          THUMB.r * Math.cos(THUMB.theta) * Math.cos(THUMB.phi)
+        )
+        camera.lookAt(0, 0.9, 0)
+
+        // Render at thumbnail size
+        renderer.setSize(160, 120, false)
         renderer.render(scene, camera)
         const src = renderer.domElement.toDataURL('image/jpeg', 0.85)
-        const img = new Image()
-        img.onload = () => {
-          const c = document.createElement('canvas')
-          c.width = 160; c.height = 120
-          c.getContext('2d').drawImage(img, 0, 0, 160, 120)
-          onThumbnailCapture(c.toDataURL('image/jpeg', 0.8))
-        }
-        img.src = src
-      }, 120)
+
+        // Restore main renderer
+        renderer.setSize(W, H, false)
+        camera.position.copy(savedPos)
+        camera.aspect = savedAspect
+        camera.updateProjectionMatrix()
+
+        onThumbnailCapture(src)
+      }, 150)
     }
   }, [geometry, onThumbnailCapture])
 
+  // ── Orbit controls (vertical INVERTED) ──
   const onDown  = useCallback(e => { const o = ctx.current.orbit; if (o) { o.dragging = true; o.lx = e.clientX; o.ly = e.clientY } }, [])
   const onMove  = useCallback(e => {
     const o = ctx.current.orbit
     if (!o?.dragging) return
     o.theta -= (e.clientX - o.lx) * 0.008
-    o.phi    = Math.max(0.04, Math.min(1.45, o.phi - (e.clientY - o.ly) * 0.008))
+    o.phi    = Math.max(0.04, Math.min(1.45, o.phi + (e.clientY - o.ly) * 0.008)) // + = inverted
     o.lx = e.clientX; o.ly = e.clientY
   }, [])
   const onUp    = useCallback(() => { const o = ctx.current.orbit; if (o) o.dragging = false }, [])
-  const onWheel = useCallback(e => { const o = ctx.current.orbit; if (o) o.r = Math.max(1.2, Math.min(9, o.r + e.deltaY * 0.004)) }, [])
+  const onWheel = useCallback(e => { const o = ctx.current.orbit; if (o) o.r = Math.max(1.2, Math.min(12, o.r + e.deltaY * 0.005)) }, [])
 
   return (
     <div
