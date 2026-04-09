@@ -1,15 +1,22 @@
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { GoogleOAuthProvider } from '@react-oauth/google'
-import { AuthProvider } from './context/AuthContext.jsx'
-import Home         from './components/Home/Home.jsx'
-import GameScene    from './components/Game/GameScene.jsx'
+import { AuthProvider, useAuth } from './context/AuthContext.jsx'
+import Home          from './components/Home/Home.jsx'
+import GameScene     from './components/Game/GameScene.jsx'
 import MonsterEditor from './components/MonsterEditor/MonsterEditor.jsx'
 import SurfaceEditor from './components/SurfaceEditor/SurfaceEditor.jsx'
-import LevelEditor  from './components/LevelEditor/LevelEditor.jsx'
-import AdminPanel   from './components/Admin/AdminPanel.jsx'
-import Footer       from './components/Footer/Footer.jsx'
+import LevelEditor   from './components/LevelEditor/LevelEditor.jsx'
+import AdminPanel    from './components/Admin/AdminPanel.jsx'
+import Footer        from './components/Footer/Footer.jsx'
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
+
+function RequireAuth({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return null
+  if (!user) return <Navigate to="/" replace />
+  return children
+}
 
 function Layout() {
   const { pathname } = useLocation()
@@ -21,10 +28,10 @@ function Layout() {
         <Routes>
           <Route path="/"         element={<Home />} />
           <Route path="/game"     element={<GameScene />} />
-          <Route path="/monsters" element={<MonsterEditor />} />
-          <Route path="/surfaces" element={<SurfaceEditor />} />
-          <Route path="/levels"   element={<LevelEditor />} />
-          <Route path="/admin"    element={<AdminPanel />} />
+          <Route path="/monsters" element={<RequireAuth><MonsterEditor /></RequireAuth>} />
+          <Route path="/surfaces" element={<RequireAuth><SurfaceEditor /></RequireAuth>} />
+          <Route path="/levels"   element={<RequireAuth><LevelEditor /></RequireAuth>} />
+          <Route path="/admin"    element={<RequireAuth><AdminPanel /></RequireAuth>} />
         </Routes>
       </div>
       {!hideFooter && <Footer />}

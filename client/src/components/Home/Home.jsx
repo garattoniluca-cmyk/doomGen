@@ -106,40 +106,42 @@ export default function Home() {
         </div>
       )}
 
-      {/* ── Separator ── */}
-      <div style={{ width: 360, borderTop: '1px solid #1a0a00', margin: '44px 0 36px', position: 'relative' }}>
-        <span style={{
-          position: 'absolute', top: -9, left: '50%', transform: 'translateX(-50%)',
-          background: '#060402', padding: '0 12px',
-          color: '#1e0c04', fontSize: 11, letterSpacing: 4,
-        }}>EDITOR</span>
-      </div>
-
-      {/* ── Editor cards ── */}
-      <div style={{ display: 'flex', gap: 20 }}>
-        {EDITORS.map(card => (
-          <EditorCard key={card.path} {...card} onClick={() => navigate(card.path)} />
-        ))}
-      </div>
-
-      {/* ── Online users ── */}
-      {online.length > 0 && (
-        <div style={{ marginTop: 36, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-          <div style={{ color: '#1e0c04', fontSize: 10, letterSpacing: 4 }}>
-            CONNESSI ORA — {online.length}
+      {/* ── Separator + Editor cards + Online users (solo se loggato) ── */}
+      {!loading && user && (
+        <>
+          <div style={{ width: 360, borderTop: '1px solid #1a0a00', margin: '44px 0 36px', position: 'relative' }}>
+            <span style={{
+              position: 'absolute', top: -9, left: '50%', transform: 'translateX(-50%)',
+              background: '#060402', padding: '0 12px',
+              color: '#1e0c04', fontSize: 11, letterSpacing: 4,
+            }}>EDITOR</span>
           </div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-            {online.map(u => (
-              <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {u.avatar
-                  ? <img src={u.avatar} style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid #2a1000', opacity: 0.7 }} alt="" />
-                  : <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#1a0800', border: '1px solid #2a1000' }} />
-                }
-                <span style={{ color: '#3a1a08', fontSize: 10, letterSpacing: 1 }}>{u.name}</span>
-              </div>
+
+          <div style={{ display: 'flex', gap: 20 }}>
+            {EDITORS.map(card => (
+              <EditorCard key={card.path} {...card} onClick={() => navigate(card.path)} />
             ))}
           </div>
-        </div>
+
+          {online.length > 0 && (
+            <div style={{ marginTop: 36, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <div style={{ color: '#1e0c04', fontSize: 10, letterSpacing: 4 }}>
+                CONNESSI ORA — {online.length}
+              </div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+                {online.map(u => (
+                  <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {u.avatar
+                      ? <img src={u.avatar} style={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid #2a1000', opacity: 0.7 }} alt="" />
+                      : <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#1a0800', border: '1px solid #2a1000' }} />
+                    }
+                    <span style={{ color: '#3a1a08', fontSize: 10, letterSpacing: 1 }}>{u.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   )
