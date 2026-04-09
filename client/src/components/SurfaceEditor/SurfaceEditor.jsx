@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import PageHeader from '../PageHeader.jsx'
+import { useAuth } from '../../context/AuthContext.jsx'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const SURFACE_TYPES  = ['wall', 'floor', 'ceiling']
@@ -321,30 +322,82 @@ function SurfaceCardCanvas({ surface }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function SurfaceEditor() {
+  const { token } = useAuth()
   const [activeType, setActiveType]   = useState('wall')
   const [form, setForm]               = useState(DEFAULT_FORM)
   const [surfaces, setSurfaces]       = useState([])
   const [selected, setSelected]       = useState(null)
+  const [saving, setSaving]           = useState(false)
   const [error, setError]             = useState('')
+
+  const authH = { Authorization: `Bearer ${token}` }
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  // When pattern changes, auto-set default hell colors for that pattern
   const setPattern = (p) => setForm(f => ({
     ...f, pattern: p,
     primaryColor:   PATTERN_DEFAULTS[p]?.primary   ?? f.primaryColor,
     secondaryColor: PATTERN_DEFAULTS[p]?.secondary ?? f.secondaryColor,
   }))
 
+  // ── Load from DB ────────────────────────────────────────────────────────────
+  const loadSurfaces = useCallback(async () => {
+    try {
+      const r = await fetch('/api/surfaces', { headers: authH })
+      if (r.ok) {
+        const rows = await r.json()
+        // Map snake_case DB fields to camelCase used in UI
+        setSurfaces(rows.map(s => ({
+          id:             s.id,
+          name:           s.name,
+          surfaceType:    s.surface_type,
+          primaryColor:   s.primary_color,
+          secondaryColor: s.secondary_color,
+          pattern:        s.pattern,
+          description:    s.description ?? '',
+        })))
+      }
+    } catch {}
+  }, [token])
+
+  useEffect(() => { loadSurfaces() }, [loadSurfaces])
+
   const filteredSurfaces = surfaces.filter(s => s.surfaceType === activeType)
 
-  const saveSurface = () => {
+  // ── Save to DB ──────────────────────────────────────────────────────────────
+  const saveSurface = async () => {
     if (!form.name.trim()) { setError('Inserisci un nome'); return }
-    const surface = { ...form, surfaceType: activeType, id: Date.now() }
-    setSurfaces(s => [...s, surface])
-    setSelected(surface)
-    setForm(DEFAULT_FORM)
-    setError('')
+    if (saving) return
+    setSaving(true); setError('')
+    try {
+      const body = {
+        name:           form.name,
+        surface_type:   activeType,
+        primary_color:  form.primaryColor,
+        secondary_color:form.secondaryColor,
+        pattern:        form.pattern,
+        description:    form.description,
+      }
+      const r = await fetch('/api/surfaces', {
+        method: 'POST',
+        headers: { ...authH, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!r.ok) { const d = await r.json(); throw new Error(d.error) }
+      await loadSurfaces()
+      setForm(DEFAULT_FORM)
+    } catch (e) { setError(e.message) }
+    finally { setSaving(false) }
+  }
+
+  // ── Delete from DB ──────────────────────────────────────────────────────────
+  const deleteSurface = async (id) => {
+    if (!confirm('Eliminare questa superficie?')) return
+    try {
+      await fetch(`/api/surfaces/${id}`, { method: 'DELETE', headers: authH })
+      if (selected?.id === id) setSelected(null)
+      await loadSurfaces()
+    } catch {}
   }
 
   return (
@@ -430,11 +483,11 @@ export default function SurfaceEditor() {
 
           {/* Save button */}
           <div style={{ padding:'12px 14px 16px', flexShrink:0, borderTop:'1px solid #1e0e00' }}>
-            <button onClick={saveSurface} style={{
-              width:'100%', background:'#aa1c00', border:'none', color:'#fff',
+            <button onClick={saveSurface} disabled={saving} style={{
+              width:'100%', background: saving ? '#661100' : '#aa1c00', border:'none', color:'#fff',
               fontFamily:'monospace', fontSize:11, letterSpacing:2, padding:'8px 0',
-              cursor:'pointer',
-            }}>✓ SALVA SUPERFICIE</button>
+              cursor: saving ? 'default' : 'pointer', transition:'background 0.15s',
+            }}>{saving ? '...' : '✓ SALVA SUPERFICIE'}</button>
           </div>
         </div>
 
@@ -452,22 +505,38 @@ export default function SurfaceEditor() {
 
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))', gap:10 }}>
             {filteredSurfaces.map(s => (
-              <div key={s.id} onClick={() => setSelected(s)} style={{
-                cursor:'pointer',
-                border:`1px solid ${selected?.id===s.id ? '#cc2200' : '#1e0e00'}`,
-                background: selected?.id===s.id ? '#1a0800' : '#0a0503',
-                padding:8, transition:'all 0.15s',
-              }}
-              onMouseEnter={e => { if(selected?.id!==s.id) e.currentTarget.style.borderColor='#441800' }}
-              onMouseLeave={e => { if(selected?.id!==s.id) e.currentTarget.style.borderColor='#1e0e00' }}>
+              <div key={s.id} onClick={() => setSelected(s)}
+                style={{
+                  cursor:'pointer', position:'relative',
+                  border:`1px solid ${selected?.id===s.id ? '#cc2200' : '#1e0e00'}`,
+                  background: selected?.id===s.id ? '#1a0800' : '#0a0503',
+                  padding:8, transition:'all 0.15s',
+                }}
+                onMouseEnter={e => {
+                  if(selected?.id!==s.id) e.currentTarget.style.borderColor='#441800'
+                  e.currentTarget.querySelector('.del-btn').style.opacity='1'
+                }}
+                onMouseLeave={e => {
+                  if(selected?.id!==s.id) e.currentTarget.style.borderColor='#1e0e00'
+                  e.currentTarget.querySelector('.del-btn').style.opacity='0'
+                }}>
                 <SurfaceCardCanvas surface={s} />
                 <div style={{ marginTop:6, fontSize:10, color:'#cc7744',
                   whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', letterSpacing:1 }}>
                   {s.name}
                 </div>
                 <div style={{ fontSize:9, color:'#664433', marginTop:2, letterSpacing:1 }}>
-                  {PATTERN_LABELS[s.pattern]}
+                  {PATTERN_LABELS[s.pattern] ?? s.pattern}
                 </div>
+                {/* Delete button - appears on hover */}
+                <button className="del-btn"
+                  onClick={e => { e.stopPropagation(); deleteSurface(s.id) }}
+                  style={{
+                    position:'absolute', top:4, right:4, opacity:0,
+                    background:'rgba(0,0,0,0.7)', border:'1px solid #441100',
+                    color:'#cc3300', fontSize:13, lineHeight:1,
+                    padding:'1px 5px', cursor:'pointer', transition:'opacity 0.15s',
+                  }}>×</button>
               </div>
             ))}
           </div>

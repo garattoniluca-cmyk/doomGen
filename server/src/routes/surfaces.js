@@ -1,15 +1,10 @@
 import { Router } from 'express'
 import pool from '../db/connection.js'
 import { requireAuth } from '../middleware/auth.js'
-import { generateSurface } from '../services/generator.js'
 
 const router = Router()
 
-router.post('/generate', (req, res) => {
-  const { type } = req.body ?? {}
-  res.json(generateSurface({ type }))
-})
-
+// ── GET all surfaces for current user ─────────────────────────────────────────
 router.get('/', requireAuth, async (req, res) => {
   try {
     const [rows] = await pool.query(
@@ -22,20 +17,40 @@ router.get('/', requireAuth, async (req, res) => {
   }
 })
 
+// ── POST create new surface ───────────────────────────────────────────────────
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const { name, surface_type, primary_color, secondary_color, pattern, mood } = req.body
+    const { name, surface_type, primary_color, secondary_color, pattern, description } = req.body
+    if (!name || !surface_type) return res.status(400).json({ error: 'name e surface_type obbligatori' })
     const [result] = await pool.query(
-      `INSERT INTO surfaces (user_id,name,surface_type,primary_color,secondary_color,pattern,mood)
-       VALUES (?,?,?,?,?,?,?)`,
-      [req.user.id, name, surface_type, primary_color, secondary_color, pattern, mood]
+      `INSERT INTO surfaces (user_id, name, surface_type, primary_color, secondary_color, pattern, description)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [req.user.id, name, surface_type, primary_color, secondary_color, pattern ?? 'hellstone', description ?? null]
     )
-    res.status(201).json({ id: result.insertId, ...req.body })
+    res.status(201).json({ id: result.insertId })
   } catch (err) {
     res.status(500).json({ error: err.message })
   }
 })
 
+// ── PUT update existing surface ───────────────────────────────────────────────
+router.put('/:id', requireAuth, async (req, res) => {
+  try {
+    const { name, surface_type, primary_color, secondary_color, pattern, description } = req.body
+    const [r] = await pool.query(
+      `UPDATE surfaces
+       SET name=?, surface_type=?, primary_color=?, secondary_color=?, pattern=?, description=?
+       WHERE id=? AND user_id=?`,
+      [name, surface_type, primary_color, secondary_color, pattern, description ?? null, req.params.id, req.user.id]
+    )
+    if (r.affectedRows === 0) return res.status(404).json({ error: 'Non trovato o non autorizzato' })
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ── DELETE ────────────────────────────────────────────────────────────────────
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const [r] = await pool.query(

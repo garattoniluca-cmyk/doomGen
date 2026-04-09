@@ -77,6 +77,9 @@ export async function initDB() {
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS thumbnail    MEDIUMTEXT   DEFAULT NULL`)
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS sight_range  INT          DEFAULT 10`)
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS attack_range INT          DEFAULT 2`)
+    // Surface columns — expand pattern to VARCHAR for new hell patterns, add description
+    await conn.query(`ALTER TABLE surfaces ADD COLUMN IF NOT EXISTS description TEXT DEFAULT NULL`)
+    await conn.query(`ALTER TABLE surfaces MODIFY COLUMN pattern VARCHAR(50) NOT NULL DEFAULT 'hellstone'`)
 
     // Session tracking table (one row per session)
     await conn.query(`
