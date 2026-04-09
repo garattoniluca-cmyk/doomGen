@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { GoogleLogin } from '@react-oauth/google'
 import { useAuth } from '../../context/AuthContext.jsx'
+import SoundToggle from '../SoundToggle.jsx'
 
 const EDITORS = [
   { label: 'MOSTRI',    desc: 'Crea e configura i nemici del gioco',    path: '/monsters', icon: '☠' },
@@ -44,8 +45,9 @@ export default function Home() {
       position: 'relative',
     }}>
 
-      {/* ── Top-right: user info ── */}
+      {/* ── Top-right: sound toggle + user info ── */}
       <div style={{ position: 'absolute', top: 14, right: 18, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <SoundToggle />
         {!loading && user && (
           <>
             {user.isAdmin && (
