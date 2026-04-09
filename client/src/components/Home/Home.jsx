@@ -5,9 +5,9 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import SoundToggle from '../SoundToggle.jsx'
 
 const EDITORS = [
-  { label: 'MOSTRI',    desc: 'Crea e configura i nemici del gioco',   path: '/monsters', icon: '☠' },
-  { label: 'SUPERFICI', desc: 'Texture per muri, pavimenti e soffitti', path: '/surfaces', icon: '▦' },
-  { label: 'LIVELLI',   desc: 'Disegna e genera le mappe di gioco',     path: '/levels',   icon: '⊞' },
+  { label: 'MOSTRI',    desc: 'Crea e configura i nemici del gioco',   path: '/monsters', img: '/card-mostri.png' },
+  { label: 'SUPERFICI', desc: 'Texture per muri, pavimenti e soffitti', path: '/surfaces', img: '/card-superfici.png' },
+  { label: 'LIVELLI',   desc: 'Disegna e genera le mappe di gioco',     path: '/levels',   img: '/card-livelli.png' },
 ]
 
 export default function Home() {
@@ -242,34 +242,47 @@ function PlayButton({ onClick }) {
 }
 
 // ── Editor card ───────────────────────────────────────────────────────────────
-function EditorCard({ icon, label, desc, onClick }) {
+function EditorCard({ img, label, desc, onClick }) {
   return (
     <div onClick={onClick}
       style={{
         width: 168,
         background: 'rgba(6,4,2,0.88)',
         border: '1px solid rgba(180,50,0,0.5)',
-        padding: '20px 14px 18px', cursor: 'pointer',
-        textAlign: 'center', transition: 'all 0.18s',
-        backdropFilter: 'blur(6px)',
+        cursor: 'pointer', textAlign: 'center',
+        transition: 'all 0.18s', backdropFilter: 'blur(6px)',
         boxShadow: '0 4px 18px rgba(0,0,0,0.7)',
+        overflow: 'hidden',
       }}
       onMouseEnter={e => Object.assign(e.currentTarget.style, {
         borderColor: '#cc2200',
-        background: 'rgba(20,8,0,0.95)',
-        boxShadow: '0 0 22px #cc220044, 0 4px 18px rgba(0,0,0,0.8)',
+        boxShadow: '0 0 28px #cc220066, 0 4px 18px rgba(0,0,0,0.8)',
+        transform: 'translateY(-3px)',
       })}
       onMouseLeave={e => Object.assign(e.currentTarget.style, {
         borderColor: 'rgba(180,50,0,0.5)',
-        background: 'rgba(6,4,2,0.88)',
         boxShadow: '0 4px 18px rgba(0,0,0,0.7)',
+        transform: 'translateY(0)',
       })}
     >
-      <div style={{ fontSize:26, marginBottom:8, color:'#ff6633',
-        textShadow:'0 0 10px #cc3300' }}>{icon}</div>
-      <div style={{ color:'#ff8855', fontSize:11, letterSpacing:3,
-        marginBottom:8, textShadow:'0 0 8px #cc2200' }}>{label}</div>
-      <div style={{ color:'#cc8866', fontSize:10, lineHeight:1.8 }}>{desc}</div>
+      {/* Card image */}
+      <div style={{ width:'100%', aspectRatio:'1/1', overflow:'hidden', position:'relative' }}>
+        <img src={img} alt={label} style={{
+          width:'100%', height:'100%', objectFit:'cover',
+          display:'block', transition:'transform 0.3s',
+        }} />
+        {/* Subtle dark overlay at bottom of image */}
+        <div style={{
+          position:'absolute', bottom:0, left:0, right:0, height:'40%',
+          background:'linear-gradient(to bottom, transparent, rgba(6,4,2,0.9))',
+        }} />
+      </div>
+      {/* Label + desc */}
+      <div style={{ padding:'10px 12px 14px' }}>
+        <div style={{ color:'#ff8855', fontSize:11, letterSpacing:3,
+          marginBottom:6, textShadow:'0 0 8px #cc2200' }}>{label}</div>
+        <div style={{ color:'#cc8866', fontSize:10, lineHeight:1.8 }}>{desc}</div>
+      </div>
     </div>
   )
 }
