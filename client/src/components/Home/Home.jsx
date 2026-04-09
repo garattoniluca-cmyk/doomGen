@@ -54,7 +54,7 @@ export default function Home() {
       {/* ── Dark gradient overlay ── */}
       <div style={{
         position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-        background: 'linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.35) 35%, rgba(4,2,1,0.82) 58%, rgba(4,2,1,0.97) 100%)',
+        background: 'linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.25) 30%, rgba(4,2,1,0.70) 55%, rgba(4,2,1,0.78) 100%)',
         pointerEvents: 'none',
       }} />
 
