@@ -37,6 +37,7 @@ export default function Home() {
       background: '#060402',
       display: 'flex', flexDirection: 'column',
       alignItems: 'center',
+      justifyContent: 'flex-start',
       fontFamily: 'Courier New, monospace',
       overflow: 'hidden', userSelect: 'none',
       position: 'relative',
@@ -50,10 +51,10 @@ export default function Home() {
         opacity: 0.55, pointerEvents: 'none',
       }} />
 
-      {/* ── Dark gradient overlay: image shows at top, dark panel at bottom ── */}
+      {/* ── Dark gradient overlay ── */}
       <div style={{
         position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-        background: 'linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.15) 40%, rgba(4,2,1,0.88) 62%, rgba(4,2,1,0.97) 100%)',
+        background: 'linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.35) 35%, rgba(4,2,1,0.82) 58%, rgba(4,2,1,0.97) 100%)',
         pointerEvents: 'none',
       }} />
 
@@ -98,24 +99,39 @@ export default function Home() {
         )}
       </div>
 
-      {/* ── Spacer: push content to lower half ── */}
-      <div style={{ flex: '0 0 52%' }} />
-
-      {/* ── Content panel (lower half, over dark gradient) ── */}
+      {/* ── Content panel ── */}
       <div style={{
         position: 'relative', zIndex: 1,
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', gap: 0,
-        paddingBottom: 16, width: '100%',
+        paddingTop: '7%', paddingBottom: 16, width: '100%',
       }}>
 
-        {/* Subtitle */}
+        {/* DoomGen title */}
         <div style={{
-          color: '#ff9966', fontSize: 11, letterSpacing: 8,
-          textShadow: '0 0 12px #ff4400, 0 2px 8px #000',
-          marginBottom: 28,
+          fontSize: 62, fontWeight: 'bold', letterSpacing: 10,
+          color: '#ff3300',
+          textShadow: '0 0 20px #ff4400, 0 0 50px #cc2200aa, 0 2px 4px #000',
+          lineHeight: 1, marginBottom: 10,
+          fontFamily: 'Courier New, monospace',
+        }}>DoomGen</div>
+
+        {/* Subtitle line 1 */}
+        <div style={{
+          color: '#ffaa77', fontSize: 11, letterSpacing: 8,
+          textShadow: '0 0 10px #cc4400, 0 2px 6px #000',
+          marginBottom: 6,
         }}>
           GENERATORE DI INFERI
+        </div>
+
+        {/* Subtitle line 2 */}
+        <div style={{
+          color: '#cc7744', fontSize: 10, letterSpacing: 4,
+          textShadow: '0 1px 6px #000',
+          marginBottom: 32,
+        }}>
+          Procedural · AI assisted · Multiuser Hell
         </div>
 
         {/* GIOCA */}
