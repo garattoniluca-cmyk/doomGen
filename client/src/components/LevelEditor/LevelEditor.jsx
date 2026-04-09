@@ -172,7 +172,7 @@ export default function LevelEditor() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <PageHeader title="Editor Livelli" />
+      <PageHeader title="Editor Livelli" icon="/card-livelli.png" />
       {/* ── View mode tabs ── */}
       <div className="tab-bar">
         <div className={`tab ${viewMode === '2d' ? 'active' : ''}`} onClick={() => setViewMode('2d')}>Editor 2D</div>

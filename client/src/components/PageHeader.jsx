@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import SoundToggle from './SoundToggle.jsx'
 
-export default function PageHeader({ title }) {
+export default function PageHeader({ title, icon }) {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
 
@@ -17,9 +17,16 @@ export default function PageHeader({ title }) {
       flexShrink: 0,
       zIndex: 10,
     }}>
-      {/* Left: back + title */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+      {/* Left: back + icon + title */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
         <BackBtn onClick={() => navigate('/')} />
+        {icon && (
+          <img src={icon} alt="" style={{
+            width: 32, height: 32, objectFit: 'cover',
+            border: '1px solid #2a1000',
+            boxShadow: '0 0 8px #cc220033',
+          }} />
+        )}
         {title && (
           <span style={{
             color: '#885533',

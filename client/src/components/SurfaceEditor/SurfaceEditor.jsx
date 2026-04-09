@@ -403,7 +403,7 @@ export default function SurfaceEditor() {
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%',
       background:'#060402', fontFamily:'Courier New, monospace', color:'#cc7744' }}>
-      <PageHeader title="Editor Superfici" />
+      <PageHeader title="Editor Superfici" icon="/card-superfici.png" />
 
       {/* ── Type tabs ── */}
       <div style={{ display:'flex', borderBottom:'1px solid #1e0e00', flexShrink:0 }}>

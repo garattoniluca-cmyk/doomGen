@@ -152,7 +152,7 @@ export default function MonsterEditor() {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', fontFamily:'Courier New, monospace', background:C.bg }}>
-      <PageHeader title="Editor Mostri" />
+      <PageHeader title="Editor Mostri" icon="/card-mostri.png" />
 
       {/* ── 3-column layout ── */}
       <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
