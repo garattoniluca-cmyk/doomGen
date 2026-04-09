@@ -402,7 +402,8 @@ export default function SurfaceEditor() {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%',
-      background:'#060402', fontFamily:'Courier New, monospace', color:'#cc7744' }}>
+      backgroundImage:'url(/bg-surfaces.png)', backgroundSize:'cover', backgroundPosition:'center',
+      fontFamily:'Courier New, monospace', color:'#cc7744' }}>
       <PageHeader title="Editor Superfici" icon="/card-superfici.png" />
 
       {/* ── Type tabs ── */}
@@ -423,7 +424,8 @@ export default function SurfaceEditor() {
 
         {/* ── LEFT: form + preview ── */}
         <div style={{ width:300, borderRight:'1px solid #1e0e00', display:'flex',
-          flexDirection:'column', flexShrink:0, overflowY:'auto' }}
+          flexDirection:'column', flexShrink:0, overflowY:'auto',
+          background:'rgba(6,4,2,0.88)' }}
           className="me-scroll">
 
           {/* Name */}
@@ -492,7 +494,7 @@ export default function SurfaceEditor() {
         </div>
 
         {/* ── RIGHT: saved surfaces grid ── */}
-        <div style={{ flex:1, overflowY:'auto', padding:16 }} className="me-scroll">
+        <div style={{ flex:1, overflowY:'auto', padding:16, background:'rgba(6,4,2,0.82)' }} className="me-scroll">
           <div style={{ color:'#664433', fontSize:10, letterSpacing:3, marginBottom:14 }}>
             {TYPE_LABELS[activeType].toUpperCase()} SALVATE — {filteredSurfaces.length}
           </div>
