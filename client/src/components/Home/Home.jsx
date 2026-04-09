@@ -45,6 +45,21 @@ export default function Home() {
       position: 'relative',
     }}>
 
+      {/* ── Hero image ── */}
+      <img
+        src="/hero.png"
+        alt="DoomGen"
+        style={{
+          position: 'absolute',
+          top: 0, left: 0, width: '100%', height: '100%',
+          objectFit: 'cover',
+          objectPosition: 'center',
+          opacity: 0.38,
+          pointerEvents: 'none',
+          userSelect: 'none',
+        }}
+      />
+
       {/* ── Top-right: sound toggle + user info ── */}
       <div style={{ position: 'absolute', top: 14, right: 18, display: 'flex', alignItems: 'center', gap: 12 }}>
         <SoundToggle />
