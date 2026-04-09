@@ -5,9 +5,9 @@ import { useAuth } from '../../context/AuthContext.jsx'
 import SoundToggle from '../SoundToggle.jsx'
 
 const EDITORS = [
-  { label: 'MOSTRI',    desc: 'Crea e configura i nemici del gioco',    path: '/monsters', icon: '☠' },
-  { label: 'SUPERFICI', desc: 'Texture per muri, pavimenti e soffitti',  path: '/surfaces', icon: '▦' },
-  { label: 'LIVELLI',   desc: 'Disegna e genera le mappe di gioco',      path: '/levels',   icon: '⊞' },
+  { label: 'MOSTRI',    desc: 'Crea e configura i nemici del gioco',   path: '/monsters', icon: '☠' },
+  { label: 'SUPERFICI', desc: 'Texture per muri, pavimenti e soffitti', path: '/surfaces', icon: '▦' },
+  { label: 'LIVELLI',   desc: 'Disegna e genera le mappe di gioco',     path: '/levels',   icon: '⊞' },
 ]
 
 export default function Home() {
@@ -26,12 +26,9 @@ export default function Home() {
     return () => clearInterval(id)
   }, [])
 
-  const handleGoogleSuccess = async (credentialResponse) => {
-    try {
-      await loginWithGoogle(credentialResponse.credential)
-    } catch (e) {
-      alert('Login fallito: ' + e.message)
-    }
+  const handleGoogleSuccess = async (cred) => {
+    try { await loginWithGoogle(cred.credential) }
+    catch (e) { alert('Login fallito: ' + e.message) }
   }
 
   return (
@@ -39,29 +36,36 @@ export default function Home() {
       width: '100%', height: '100%',
       background: '#060402',
       display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
+      alignItems: 'center',
       fontFamily: 'Courier New, monospace',
       overflow: 'hidden', userSelect: 'none',
       position: 'relative',
     }}>
 
       {/* ── Hero image ── */}
-      <img
-        src="/hero.png"
-        alt="DoomGen"
-        style={{
-          position: 'absolute',
-          top: 0, left: 0, width: '100%', height: '100%',
-          objectFit: 'cover',
-          objectPosition: 'center',
-          opacity: 0.38,
-          pointerEvents: 'none',
-          userSelect: 'none',
-        }}
-      />
+      <img src="/hero.png" alt="" style={{
+        position: 'absolute', top: 0, left: 0,
+        width: '100%', height: '100%',
+        objectFit: 'cover', objectPosition: 'center top',
+        opacity: 0.55, pointerEvents: 'none',
+      }} />
 
-      {/* ── Top-right: sound toggle + user info ── */}
-      <div style={{ position: 'absolute', top: 14, right: 18, display: 'flex', alignItems: 'center', gap: 12 }}>
+      {/* ── Dark gradient overlay: image shows at top, dark panel at bottom ── */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
+        background: 'linear-gradient(to bottom, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.15) 40%, rgba(4,2,1,0.88) 62%, rgba(4,2,1,0.97) 100%)',
+        pointerEvents: 'none',
+      }} />
+
+      {/* ── Top-right bar: sound + user ── */}
+      <div style={{
+        position: 'absolute', top: 12, right: 16,
+        display: 'flex', alignItems: 'center', gap: 10,
+        background: 'rgba(0,0,0,0.55)',
+        border: '1px solid rgba(120,40,0,0.4)',
+        padding: '5px 10px',
+        backdropFilter: 'blur(4px)',
+      }}>
         <SoundToggle />
         {!loading && user && (
           <>
@@ -69,110 +73,126 @@ export default function Home() {
               <button onClick={() => navigate('/admin')} style={{
                 background: 'transparent', border: '1px solid #665500',
                 color: '#ccaa00', fontFamily: 'monospace', fontSize: 10,
-                letterSpacing: 2, padding: '4px 10px', cursor: 'pointer', transition: 'all 0.15s',
+                letterSpacing: 2, padding: '3px 9px', cursor: 'pointer', transition: 'all 0.15s',
               }}
-              onMouseEnter={e => Object.assign(e.currentTarget.style, { borderColor:'#ffcc00', color:'#ffdd44' })}
+              onMouseEnter={e => Object.assign(e.currentTarget.style, { borderColor:'#ffcc00', color:'#ffee55' })}
               onMouseLeave={e => Object.assign(e.currentTarget.style, { borderColor:'#665500', color:'#ccaa00' })}
               >⚙ ADMIN</button>
             )}
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:7 }}>
               {user.avatar && (
                 <img key={user.id} src={user.avatar}
-                  style={{ width:26, height:26, borderRadius:'50%', border:'1px solid #442200' }} alt="" />
+                  style={{ width:24, height:24, borderRadius:'50%', border:'1px solid #552200' }} alt="" />
               )}
-              <span style={{ color:'#cc8855', fontSize:11, letterSpacing:1 }}>{user.name}</span>
+              <span style={{ color:'#ffbb88', fontSize:11, letterSpacing:1 }}>{user.name}</span>
             </div>
             <button onClick={logout} style={{
-              background:'transparent', border:'1px solid #331800',
-              color:'#775533', fontFamily:'monospace', fontSize:10,
-              letterSpacing:1, padding:'4px 8px', cursor:'pointer', transition:'all 0.15s',
+              background:'transparent', border:'1px solid #441800',
+              color:'#cc6633', fontFamily:'monospace', fontSize:10,
+              letterSpacing:1, padding:'3px 8px', cursor:'pointer', transition:'all 0.15s',
             }}
-            onMouseEnter={e => Object.assign(e.currentTarget.style, { borderColor:'#664422', color:'#cc6633' })}
-            onMouseLeave={e => Object.assign(e.currentTarget.style, { borderColor:'#331800', color:'#775533' })}
+            onMouseEnter={e => Object.assign(e.currentTarget.style, { borderColor:'#cc2200', color:'#ff5500' })}
+            onMouseLeave={e => Object.assign(e.currentTarget.style, { borderColor:'#441800', color:'#cc6633' })}
             >ESCI</button>
           </>
         )}
       </div>
 
-      {/* ── Logo ── */}
+      {/* ── Spacer: push content to lower half ── */}
+      <div style={{ flex: '0 0 52%' }} />
+
+      {/* ── Content panel (lower half, over dark gradient) ── */}
       <div style={{
-        fontSize: 54, fontWeight: 'bold', letterSpacing: 14, color: '#cc2200',
-        textShadow: '0 0 18px #ff4400, 0 0 40px #cc2200, 0 0 80px #880000',
-        marginBottom: 6,
-      }}>DOOMGEN</div>
+        position: 'relative', zIndex: 1,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', gap: 0,
+        paddingBottom: 16, width: '100%',
+      }}>
 
-      <div style={{ color: '#aa5522', fontSize: 11, letterSpacing: 7, marginBottom: 52 }}>
-        GENERATORE DI INFERI
-      </div>
-
-      {/* ── GIOCA ── */}
-      <PlayButton onClick={() => navigate('/game')} />
-
-      {/* ── Google login ── */}
-      {!loading && !user && (
-        <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-          <div style={{ color: '#aa5522', fontSize: 10, letterSpacing: 3, marginBottom: 4 }}>
-            ACCEDI PER SALVARE I TUOI CONTENUTI
-          </div>
-          <div style={{ filter: 'invert(1) hue-rotate(180deg) brightness(0.4) sepia(1) hue-rotate(330deg)' }}>
-            <GoogleLogin
-              onSuccess={handleGoogleSuccess}
-              onError={() => alert('Errore Google Login')}
-              theme="filled_black" shape="square" text="signin_with" locale="it"
-            />
-          </div>
+        {/* Subtitle */}
+        <div style={{
+          color: '#ff9966', fontSize: 11, letterSpacing: 8,
+          textShadow: '0 0 12px #ff4400, 0 2px 8px #000',
+          marginBottom: 28,
+        }}>
+          GENERATORE DI INFERI
         </div>
-      )}
 
-      {!loading && user && (
-        <div style={{ marginTop: 16, color: '#aa5522', fontSize: 10, letterSpacing: 2 }}>
-          I tuoi contenuti vengono salvati automaticamente
-        </div>
-      )}
+        {/* GIOCA */}
+        <PlayButton onClick={() => navigate('/game')} />
 
-      {/* ── Editor section (only logged in) ── */}
-      {!loading && user && (
-        <>
-          {/* Separator */}
-          <div style={{ width: 380, borderTop: '1px solid #2a1200', margin: '40px 0 32px', position: 'relative' }}>
-            <span style={{
-              position: 'absolute', top: -9, left: '50%', transform: 'translateX(-50%)',
-              background: '#060402', padding: '0 14px',
-              color: '#aa5522', fontSize: 11, letterSpacing: 5,
-            }}>EDITOR</span>
-          </div>
-
-          {/* Cards */}
-          <div style={{ display: 'flex', gap: 20 }}>
-            {EDITORS.map(card => (
-              <EditorCard key={card.path} {...card} onClick={() => navigate(card.path)} />
-            ))}
-          </div>
-
-          {/* Online users */}
-          {online.length > 0 && (
-            <div style={{ marginTop: 38, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-              <div style={{ color: '#aa5522', fontSize: 10, letterSpacing: 4 }}>
-                CONNESSI ORA — {online.length}
-              </div>
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
-                {online.map(u => (
-                  <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {u.avatar
-                      ? <img src={u.avatar}
-                          style={{ width: 22, height: 22, borderRadius: '50%',
-                            border: '1px solid #441a00', opacity: 0.85 }} alt="" />
-                      : <div style={{ width: 22, height: 22, borderRadius: '50%',
-                          background: '#1a0800', border: '1px solid #441a00' }} />
-                    }
-                    <span style={{ color: '#cc7744', fontSize: 10, letterSpacing: 1 }}>{u.name}</span>
-                  </div>
-                ))}
-              </div>
+        {/* Google login */}
+        {!loading && !user && (
+          <div style={{ marginTop: 22, display:'flex', flexDirection:'column', alignItems:'center', gap:8 }}>
+            <div style={{ color:'#ff9966', fontSize:10, letterSpacing:3,
+              textShadow:'0 1px 6px #000' }}>
+              ACCEDI PER SALVARE I TUOI CONTENUTI
             </div>
-          )}
-        </>
-      )}
+            <div style={{ filter:'invert(1) hue-rotate(180deg) brightness(0.4) sepia(1) hue-rotate(330deg)' }}>
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => alert('Errore Google Login')}
+                theme="filled_black" shape="square" text="signin_with" locale="it"
+              />
+            </div>
+          </div>
+        )}
+
+        {!loading && user && (
+          <div style={{ marginTop:12, color:'#cc8855', fontSize:10, letterSpacing:2,
+            textShadow:'0 1px 6px #000' }}>
+            I tuoi contenuti vengono salvati automaticamente
+          </div>
+        )}
+
+        {/* Editor section */}
+        {!loading && user && (
+          <>
+            {/* Separator */}
+            <div style={{ width:420, borderTop:'1px solid rgba(180,60,0,0.4)',
+              margin:'28px 0 24px', position:'relative' }}>
+              <span style={{
+                position:'absolute', top:-9, left:'50%', transform:'translateX(-50%)',
+                background:'rgba(4,2,1,0.9)', padding:'0 16px',
+                color:'#ff9966', fontSize:10, letterSpacing:6,
+                textShadow:'0 0 10px #cc4400',
+              }}>EDITOR</span>
+            </div>
+
+            {/* Cards */}
+            <div style={{ display:'flex', gap:16 }}>
+              {EDITORS.map(card => (
+                <EditorCard key={card.path} {...card} onClick={() => navigate(card.path)} />
+              ))}
+            </div>
+
+            {/* Online users */}
+            {online.length > 0 && (
+              <div style={{ marginTop:24, display:'flex', flexDirection:'column',
+                alignItems:'center', gap:10 }}>
+                <div style={{ color:'#cc8855', fontSize:9, letterSpacing:5,
+                  textShadow:'0 1px 4px #000' }}>
+                  CONNESSI ORA — {online.length}
+                </div>
+                <div style={{ display:'flex', gap:12, flexWrap:'wrap', justifyContent:'center' }}>
+                  {online.map(u => (
+                    <div key={u.id} style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      {u.avatar
+                        ? <img src={u.avatar} style={{ width:20, height:20, borderRadius:'50%',
+                            border:'1px solid #552200' }} alt="" />
+                        : <div style={{ width:20, height:20, borderRadius:'50%',
+                            background:'#1a0800', border:'1px solid #441a00' }} />
+                      }
+                      <span style={{ color:'#ffbb88', fontSize:10, letterSpacing:1,
+                        textShadow:'0 1px 4px #000' }}>{u.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -181,22 +201,25 @@ export default function Home() {
 function PlayButton({ onClick }) {
   return (
     <button style={{
-      background: 'transparent', border: '2px solid #aa1c00', color: '#ff4400',
-      fontSize: 20, letterSpacing: 10, padding: '20px 72px', cursor: 'pointer',
+      background: 'rgba(80,10,0,0.7)',
+      border: '2px solid #cc2200',
+      color: '#ffffff',
+      fontSize: 20, letterSpacing: 12,
+      padding: '18px 80px', cursor: 'pointer',
       fontFamily: 'Courier New, monospace', fontWeight: 'bold',
-      textShadow: '0 0 10px #ff4400',
-      boxShadow: '0 0 24px #aa220033, inset 0 0 24px #aa220011',
+      textShadow: '0 0 14px #ff4400',
+      boxShadow: '0 0 28px #cc220055, inset 0 0 20px rgba(180,30,0,0.2)',
       transition: 'all 0.18s', outline: 'none',
+      backdropFilter: 'blur(4px)',
     }}
     onClick={onClick}
     onMouseEnter={e => Object.assign(e.currentTarget.style, {
-      background: '#aa1c00', color: '#ffffff', textShadow: 'none',
-      boxShadow: '0 0 36px #ff4400aa, inset 0 0 20px #ff440022',
+      background: '#cc2200', textShadow: '0 0 8px #fff',
+      boxShadow: '0 0 40px #ff4400aa',
     })}
     onMouseLeave={e => Object.assign(e.currentTarget.style, {
-      background: 'transparent', color: '#ff4400',
-      textShadow: '0 0 10px #ff4400',
-      boxShadow: '0 0 24px #aa220033, inset 0 0 24px #aa220011',
+      background: 'rgba(80,10,0,0.7)', textShadow: '0 0 14px #ff4400',
+      boxShadow: '0 0 28px #cc220055, inset 0 0 20px rgba(180,30,0,0.2)',
     })}
     >► &nbsp;GIOCA</button>
   )
@@ -205,21 +228,32 @@ function PlayButton({ onClick }) {
 // ── Editor card ───────────────────────────────────────────────────────────────
 function EditorCard({ icon, label, desc, onClick }) {
   return (
-    <div
-      style={{ width: 172, background: '#0d0806', border: '1px solid #2a1400',
-        padding: '22px 16px 20px', cursor: 'pointer', textAlign: 'center',
-        transition: 'all 0.18s' }}
-      onClick={onClick}
+    <div onClick={onClick}
+      style={{
+        width: 168,
+        background: 'rgba(6,4,2,0.88)',
+        border: '1px solid rgba(180,50,0,0.5)',
+        padding: '20px 14px 18px', cursor: 'pointer',
+        textAlign: 'center', transition: 'all 0.18s',
+        backdropFilter: 'blur(6px)',
+        boxShadow: '0 4px 18px rgba(0,0,0,0.7)',
+      }}
       onMouseEnter={e => Object.assign(e.currentTarget.style, {
-        borderColor:'#cc2200', background:'#180a00', boxShadow:'0 0 20px #cc220033',
+        borderColor: '#cc2200',
+        background: 'rgba(20,8,0,0.95)',
+        boxShadow: '0 0 22px #cc220044, 0 4px 18px rgba(0,0,0,0.8)',
       })}
       onMouseLeave={e => Object.assign(e.currentTarget.style, {
-        borderColor:'#2a1400', background:'#0d0806', boxShadow:'none',
+        borderColor: 'rgba(180,50,0,0.5)',
+        background: 'rgba(6,4,2,0.88)',
+        boxShadow: '0 4px 18px rgba(0,0,0,0.7)',
       })}
     >
-      <div style={{ fontSize: 28, marginBottom: 10, color: '#cc4400' }}>{icon}</div>
-      <div style={{ color: '#dd3300', fontSize: 12, letterSpacing: 3, marginBottom: 10 }}>{label}</div>
-      <div style={{ color: '#cc7744', fontSize: 10, lineHeight: 1.8 }}>{desc}</div>
+      <div style={{ fontSize:26, marginBottom:8, color:'#ff6633',
+        textShadow:'0 0 10px #cc3300' }}>{icon}</div>
+      <div style={{ color:'#ff8855', fontSize:11, letterSpacing:3,
+        marginBottom:8, textShadow:'0 0 8px #cc2200' }}>{label}</div>
+      <div style={{ color:'#cc8866', fontSize:10, lineHeight:1.8 }}>{desc}</div>
     </div>
   )
 }
