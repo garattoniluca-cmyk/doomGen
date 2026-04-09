@@ -6,72 +6,227 @@ import PauseMenu from './PauseMenu.jsx'
 
 // ── Canvas texture helpers ──────────────────────────────────────────────────
 
-function makeBrickTexture() {
+// ── Seeded pseudo-random (reproducible textures) ─────────────────────────────
+function seededRng(seed) {
+  let s = seed
+  return () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return (s >>> 0) / 0xffffffff }
+}
+
+// ── Hell stone wall texture ───────────────────────────────────────────────────
+// Dark red volcanic stone blocks with glowing lava cracks
+function makeHellWallTexture() {
   const c = document.createElement('canvas')
-  c.width = 64; c.height = 64
+  c.width = 128; c.height = 128
   const ctx = c.getContext('2d')
-  ctx.fillStyle = '#6b4e32'
-  ctx.fillRect(0, 0, 64, 64)
-  ctx.fillStyle = '#4a3020'
+  const rng = seededRng(42)
+
+  // Base: very dark red-black volcanic rock
+  ctx.fillStyle = '#1a0604'
+  ctx.fillRect(0, 0, 128, 128)
+
+  // Stone blocks (3 rows, alternating offset)
+  const blockColors = ['#2a0c06', '#240a05', '#1e0804', '#280b06']
   for (let row = 0; row < 4; row++) {
-    const offset = row % 2 === 0 ? 0 : 16
+    const offset = row % 2 === 0 ? 0 : 32
     for (let col = 0; col < 5; col++) {
-      ctx.fillRect(col * 32 + offset - 1, row * 16 + 1, 30, 13)
+      const bx = col * 42 + offset - 10
+      const by = row * 32 + 1
+      const bw = 40
+      const bh = 29
+      ctx.fillStyle = blockColors[Math.floor(rng() * blockColors.length)]
+      ctx.fillRect(bx, by, bw, bh)
+      // Subtle surface variation (lighter top edge)
+      ctx.fillStyle = 'rgba(255,60,0,0.04)'
+      ctx.fillRect(bx, by, bw, 3)
+      // Random surface crack marks
+      if (rng() > 0.55) {
+        ctx.strokeStyle = 'rgba(80,10,0,0.6)'
+        ctx.lineWidth = 0.5
+        ctx.beginPath()
+        ctx.moveTo(bx + rng() * bw, by + rng() * bh)
+        ctx.lineTo(bx + rng() * bw, by + rng() * bh)
+        ctx.stroke()
+      }
     }
   }
-  ctx.strokeStyle = '#3a2010'
+
+  // Mortar/grout lines — near black
+  ctx.fillStyle = '#090201'
+  for (let row = 0; row < 4; row++) {
+    ctx.fillRect(0, row * 32, 128, 2)
+  }
+
+  // Glowing lava crack running diagonally
+  ctx.save()
+  ctx.shadowColor = '#ff3300'
+  ctx.shadowBlur = 6
+  ctx.strokeStyle = '#cc1100'
   ctx.lineWidth = 1
-  for (let i = 0; i < 5; i++) { ctx.strokeRect(i * 16, 0, 15, 64) }
+  ctx.beginPath()
+  ctx.moveTo(30, 0)
+  ctx.lineTo(35, 28)
+  ctx.lineTo(28, 55)
+  ctx.lineTo(33, 88)
+  ctx.lineTo(30, 128)
+  ctx.stroke()
+  // Second smaller crack
+  ctx.strokeStyle = '#991100'
+  ctx.lineWidth = 0.7
+  ctx.shadowBlur = 3
+  ctx.beginPath()
+  ctx.moveTo(90, 0)
+  ctx.lineTo(88, 40)
+  ctx.lineTo(92, 75)
+  ctx.lineTo(90, 128)
+  ctx.stroke()
+  ctx.restore()
+
+  // Ember glow dots near cracks
+  for (let i = 0; i < 8; i++) {
+    const ex = 28 + rng() * 12
+    const ey = rng() * 128
+    ctx.save()
+    ctx.shadowColor = '#ff4400'
+    ctx.shadowBlur = 4
+    ctx.fillStyle = '#ff2200'
+    ctx.fillRect(ex | 0, ey | 0, 1, 1)
+    ctx.restore()
+  }
+
   const tex = new THREE.CanvasTexture(c)
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping
   return tex
 }
 
-function makeFloorTexture() {
+// ── Hell floor texture ────────────────────────────────────────────────────────
+// Dark volcanic flagstones with lava seams glowing orange-red
+function makeHellFloorTexture() {
   const c = document.createElement('canvas')
-  c.width = 64; c.height = 64
+  c.width = 128; c.height = 128
   const ctx = c.getContext('2d')
-  ctx.fillStyle = '#3a2a1a'
-  ctx.fillRect(0, 0, 64, 64)
-  ctx.strokeStyle = '#2a1a0a'
-  ctx.lineWidth = 1
-  for (let i = 0; i <= 64; i += 16) {
-    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 64); ctx.stroke()
-    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(64, i); ctx.stroke()
-  }
-  // Noise dots
-  ctx.fillStyle = '#2e1e0e'
-  for (let i = 0; i < 40; i++) {
-    ctx.fillRect(Math.random() * 64 | 0, Math.random() * 64 | 0, 2, 2)
-  }
-  const tex = new THREE.CanvasTexture(c)
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
-  tex.repeat.set(8, 8)
-  return tex
-}
+  const rng = seededRng(77)
 
-function makeCeilTexture() {
-  const c = document.createElement('canvas')
-  c.width = 32; c.height = 32
-  const ctx = c.getContext('2d')
-  ctx.fillStyle = '#1a1a1a'
-  ctx.fillRect(0, 0, 32, 32)
-  ctx.fillStyle = '#141414'
-  for (let i = 0; i < 15; i++) {
-    ctx.fillRect(Math.random() * 32 | 0, Math.random() * 32 | 0, 2, 2)
+  // Base: dark volcanic rock
+  ctx.fillStyle = '#120403'
+  ctx.fillRect(0, 0, 128, 128)
+
+  // Irregular flagstone tiles
+  const stoneColors = ['#1c0705', '#180604', '#200806', '#1a0604']
+  const tiles = [
+    [0,0,60,60], [63,0,62,60], [0,63,40,62], [42,63,44,62], [88,63,38,62],
+    [65,0,30,30], [97,0,30,30], [65,32,62,28],
+    [0,0,38,30], [40,0,22,30], [0,32,38,28],
+  ]
+  tiles.forEach(([x,y,w,h]) => {
+    ctx.fillStyle = stoneColors[Math.floor(rng() * stoneColors.length)]
+    ctx.fillRect(x+1, y+1, w-2, h-2)
+    // Darker inner shadow at edges
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'
+    ctx.fillRect(x+1, y+1, w-2, 3)
+    ctx.fillRect(x+1, y+1, 3, h-2)
+  })
+
+  // Lava seam lines between stones
+  ctx.save()
+  ctx.shadowColor = '#ff5500'
+  ctx.shadowBlur = 5
+  ctx.strokeStyle = '#dd2200'
+  ctx.lineWidth = 1.5
+  // Horizontal seams
+  ctx.beginPath(); ctx.moveTo(0, 62); ctx.lineTo(128, 62); ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(62, 0); ctx.lineTo(62, 60); ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(41, 62); ctx.lineTo(41, 128); ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(87, 62); ctx.lineTo(87, 128); ctx.stroke()
+  // Smaller seam variation
+  ctx.strokeStyle = '#aa1800'
+  ctx.shadowBlur = 2
+  ctx.lineWidth = 0.8
+  ctx.beginPath(); ctx.moveTo(0, 32); ctx.lineTo(38, 32); ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(40, 0); ctx.lineTo(40, 60); ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(65, 32); ctx.lineTo(128, 32); ctx.stroke()
+  ctx.restore()
+
+  // Ember / ash specks
+  for (let i = 0; i < 20; i++) {
+    const ex = rng() * 128 | 0
+    const ey = rng() * 128 | 0
+    ctx.save()
+    ctx.shadowColor = rng() > 0.5 ? '#ff4400' : '#ff8800'
+    ctx.shadowBlur = 3
+    ctx.fillStyle = rng() > 0.5 ? '#ff3300' : '#cc1100'
+    ctx.fillRect(ex, ey, 1, 1)
+    ctx.restore()
   }
+
+  // Rock surface noise
+  ctx.fillStyle = 'rgba(0,0,0,0.15)'
+  for (let i = 0; i < 80; i++) {
+    ctx.fillRect(rng() * 128 | 0, rng() * 128 | 0, rng() * 3 + 1 | 0, 1)
+  }
+
   const tex = new THREE.CanvasTexture(c)
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping
   tex.repeat.set(6, 6)
   return tex
 }
 
+// ── Hell ceiling texture ──────────────────────────────────────────────────────
+// Dark cave rock with red-black volcanic veins
+function makeHellCeilTexture() {
+  const c = document.createElement('canvas')
+  c.width = 64; c.height = 64
+  const ctx = c.getContext('2d')
+  const rng = seededRng(99)
+
+  // Base: near-black cave ceiling
+  ctx.fillStyle = '#0e0303'
+  ctx.fillRect(0, 0, 64, 64)
+
+  // Rock texture patches (slightly different dark reds)
+  const ceilColors = ['#130404', '#110303', '#150505', '#0f0302']
+  for (let i = 0; i < 18; i++) {
+    const x = rng() * 64 | 0
+    const y = rng() * 64 | 0
+    const w = (rng() * 18 + 8) | 0
+    const h = (rng() * 10 + 5) | 0
+    ctx.fillStyle = ceilColors[Math.floor(rng() * ceilColors.length)]
+    ctx.fillRect(x, y, w, h)
+  }
+
+  // Faint dark-red mineral veins
+  ctx.save()
+  ctx.strokeStyle = 'rgba(120,10,0,0.35)'
+  ctx.lineWidth = 0.8
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath()
+    ctx.moveTo(rng() * 64, rng() * 64)
+    ctx.lineTo(rng() * 64, rng() * 64)
+    ctx.stroke()
+  }
+  ctx.restore()
+
+  // Very faint ember glow (distant lava below reflected on ceiling)
+  ctx.save()
+  ctx.shadowColor = '#ff2200'
+  ctx.shadowBlur = 8
+  ctx.fillStyle = 'rgba(150,20,0,0.08)'
+  ctx.fillRect(20, 20, 24, 24)
+  ctx.restore()
+
+  const tex = new THREE.CanvasTexture(c)
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+  tex.repeat.set(7, 7)
+  return tex
+}
+
 // ── Level builder ───────────────────────────────────────────────────────────
 
 function buildLevel(scene, brickTex) {
+  // Main walls: full hellstone color
   const wallMat = new THREE.MeshLambertMaterial({ map: brickTex })
+  // Dark walls: slightly more shadowed red-black
   const darkWallMat = new THREE.MeshLambertMaterial({
-    map: brickTex, color: new THREE.Color(0.6, 0.5, 0.4)
+    map: brickTex, color: new THREE.Color(0.55, 0.25, 0.2)
   })
 
   const wall = (w, h, d, x, y, z, mat = wallMat) => {
@@ -114,7 +269,7 @@ function buildLevel(scene, brickTex) {
   const crate = (x, z) => {
     const m = new THREE.Mesh(
       new THREE.BoxGeometry(0.8, 0.8, 0.8),
-      new THREE.MeshLambertMaterial({ color: 0x5a3a18 })
+      new THREE.MeshLambertMaterial({ color: 0x2a0c06 })
     )
     m.position.set(x, 0.4, z)
     scene.add(m)
@@ -158,8 +313,8 @@ export default function GameScene() {
 
     // ── Scene ────────────────────────────────────────────────────
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x1a1008)
-    scene.fog = new THREE.FogExp2(0x1a1008, 0.055)
+    scene.background = new THREE.Color(0x0e0303)
+    scene.fog = new THREE.FogExp2(0x0e0303, 0.058)
 
     // ── Camera ───────────────────────────────────────────────────
     const camera = new THREE.PerspectiveCamera(75, mount.clientWidth / mount.clientHeight, 0.05, 80)
@@ -172,36 +327,40 @@ export default function GameScene() {
     renderer.shadowMap.enabled = true
     mount.appendChild(renderer.domElement)
 
-    // ── Lights ───────────────────────────────────────────────────
-    scene.add(new THREE.AmbientLight(0xaa8866, 3.5))
+    // ── Lights — hellfire palette ────────────────────────────────
+    // Dim red-orange ambient: everything tinted blood-red
+    scene.add(new THREE.AmbientLight(0x661108, 4.0))
 
-    const torch1 = new THREE.PointLight(0xff6600, 4.0, 18)
+    // Central lava glow — intense orange-red
+    const torch1 = new THREE.PointLight(0xff3300, 5.0, 20)
     torch1.position.set(0, 2.5, 0)
     scene.add(torch1)
 
-    const torch2 = new THREE.PointLight(0xff5500, 3.0, 16)
+    // Far corner torches — deep red
+    const torch2 = new THREE.PointLight(0xdd2200, 3.5, 16)
     torch2.position.set(-6, 2.4, -6)
     scene.add(torch2)
 
-    const torch3 = new THREE.PointLight(0x6688ff, 2.5, 16)
+    // Opposite corner — slightly more orange for variety
+    const torch3 = new THREE.PointLight(0xff4400, 3.0, 16)
     torch3.position.set(7, 2.4, 6)
     scene.add(torch3)
 
-    // Extra fill lights spread across the level
-    const fill1 = new THREE.PointLight(0xff7733, 2.5, 14)
+    // Fill lights — warm hellfire tones, no blue
+    const fill1 = new THREE.PointLight(0xff2200, 2.8, 14)
     fill1.position.set(6, 2.4, -6)
     scene.add(fill1)
 
-    const fill2 = new THREE.PointLight(0xff6600, 2.5, 14)
+    const fill2 = new THREE.PointLight(0xee3300, 2.5, 14)
     fill2.position.set(-7, 2.4, 5)
     scene.add(fill2)
 
-    const fill3 = new THREE.PointLight(0xffaa44, 2.0, 14)
+    const fill3 = new THREE.PointLight(0xff5500, 2.2, 14)
     fill3.position.set(0, 2.4, -7)
     scene.add(fill3)
 
     // ── Floor ────────────────────────────────────────────────────
-    const floorTex = makeFloorTexture()
+    const floorTex = makeHellFloorTexture()
     const floorMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(20, 20),
       new THREE.MeshLambertMaterial({ map: floorTex })
@@ -211,7 +370,7 @@ export default function GameScene() {
     scene.add(floorMesh)
 
     // ── Ceiling ──────────────────────────────────────────────────
-    const ceilTex = makeCeilTexture()
+    const ceilTex = makeHellCeilTexture()
     const ceilMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(20, 20),
       new THREE.MeshLambertMaterial({ map: ceilTex })
@@ -221,9 +380,9 @@ export default function GameScene() {
     scene.add(ceilMesh)
 
     // ── Level geometry ───────────────────────────────────────────
-    const brickTex = makeBrickTexture()
-    brickTex.repeat.set(2, 1)
-    buildLevel(scene, brickTex)
+    const hellWallTex = makeHellWallTexture()
+    hellWallTex.repeat.set(2, 1)
+    buildLevel(scene, hellWallTex)
 
     // ── Gun model (child of camera) ──────────────────────────────
     const gunGroup = new THREE.Group()
