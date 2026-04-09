@@ -63,7 +63,7 @@ export default function Home() {
                 <img key={user.id} src={user.avatar}
                   style={{ width:26, height:26, borderRadius:'50%', border:'1px solid #442200' }} alt="" />
               )}
-              <span style={{ color:'#996644', fontSize:11, letterSpacing:1 }}>{user.name}</span>
+              <span style={{ color:'#cc8855', fontSize:11, letterSpacing:1 }}>{user.name}</span>
             </div>
             <button onClick={logout} style={{
               background:'transparent', border:'1px solid #331800',
@@ -84,7 +84,7 @@ export default function Home() {
         marginBottom: 6,
       }}>DOOMGEN</div>
 
-      <div style={{ color: '#664422', fontSize: 11, letterSpacing: 7, marginBottom: 52 }}>
+      <div style={{ color: '#aa5522', fontSize: 11, letterSpacing: 7, marginBottom: 52 }}>
         GENERATORE DI INFERI
       </div>
 
@@ -94,7 +94,7 @@ export default function Home() {
       {/* ── Google login ── */}
       {!loading && !user && (
         <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-          <div style={{ color: '#664422', fontSize: 10, letterSpacing: 3, marginBottom: 4 }}>
+          <div style={{ color: '#aa5522', fontSize: 10, letterSpacing: 3, marginBottom: 4 }}>
             ACCEDI PER SALVARE I TUOI CONTENUTI
           </div>
           <div style={{ filter: 'invert(1) hue-rotate(180deg) brightness(0.4) sepia(1) hue-rotate(330deg)' }}>
@@ -108,7 +108,7 @@ export default function Home() {
       )}
 
       {!loading && user && (
-        <div style={{ marginTop: 16, color: '#664422', fontSize: 10, letterSpacing: 2 }}>
+        <div style={{ marginTop: 16, color: '#aa5522', fontSize: 10, letterSpacing: 2 }}>
           I tuoi contenuti vengono salvati automaticamente
         </div>
       )}
@@ -121,7 +121,7 @@ export default function Home() {
             <span style={{
               position: 'absolute', top: -9, left: '50%', transform: 'translateX(-50%)',
               background: '#060402', padding: '0 14px',
-              color: '#664422', fontSize: 11, letterSpacing: 5,
+              color: '#aa5522', fontSize: 11, letterSpacing: 5,
             }}>EDITOR</span>
           </div>
 
@@ -135,7 +135,7 @@ export default function Home() {
           {/* Online users */}
           {online.length > 0 && (
             <div style={{ marginTop: 38, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-              <div style={{ color: '#664422', fontSize: 10, letterSpacing: 4 }}>
+              <div style={{ color: '#aa5522', fontSize: 10, letterSpacing: 4 }}>
                 CONNESSI ORA — {online.length}
               </div>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
@@ -148,7 +148,7 @@ export default function Home() {
                       : <div style={{ width: 22, height: 22, borderRadius: '50%',
                           background: '#1a0800', border: '1px solid #441a00' }} />
                     }
-                    <span style={{ color: '#885533', fontSize: 10, letterSpacing: 1 }}>{u.name}</span>
+                    <span style={{ color: '#cc7744', fontSize: 10, letterSpacing: 1 }}>{u.name}</span>
                   </div>
                 ))}
               </div>
@@ -202,7 +202,7 @@ function EditorCard({ icon, label, desc, onClick }) {
     >
       <div style={{ fontSize: 28, marginBottom: 10, color: '#cc4400' }}>{icon}</div>
       <div style={{ color: '#dd3300', fontSize: 12, letterSpacing: 3, marginBottom: 10 }}>{label}</div>
-      <div style={{ color: '#885533', fontSize: 10, lineHeight: 1.8 }}>{desc}</div>
+      <div style={{ color: '#cc7744', fontSize: 10, lineHeight: 1.8 }}>{desc}</div>
     </div>
   )
 }
