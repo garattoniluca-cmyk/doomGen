@@ -109,11 +109,11 @@ export default function Home() {
 
         {/* DoomGen title */}
         <div style={{
-          fontSize: 62, fontWeight: 'bold', letterSpacing: 10,
-          color: '#ff3300',
-          textShadow: '0 0 20px #ff4400, 0 0 50px #cc2200aa, 0 2px 4px #000',
-          lineHeight: 1, marginBottom: 10,
-          fontFamily: 'Courier New, monospace',
+          fontSize: 72, fontWeight: 'normal', letterSpacing: 6,
+          color: '#ff2200',
+          textShadow: '0 0 22px #ff4400, 0 0 55px #cc110088, 0 3px 6px #000, 2px 2px 0 #550000',
+          lineHeight: 1, marginBottom: 12,
+          fontFamily: '"Metal Mania", cursive',
         }}>DoomGen</div>
 
         {/* Subtitle line 1 */}
