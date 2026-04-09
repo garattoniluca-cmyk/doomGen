@@ -217,25 +217,29 @@ export default function Home() {
 function PlayButton({ onClick }) {
   return (
     <button style={{
-      background: 'rgba(80,10,0,0.7)',
-      border: '2px solid #cc2200',
+      position: 'relative',
+      backgroundImage: 'url(/btn-gioca.png)',
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      border: '2px solid #8a3000',
       color: '#ffffff',
-      fontSize: 20, letterSpacing: 12,
-      padding: '18px 80px', cursor: 'pointer',
+      fontSize: 22, letterSpacing: 14,
+      padding: '22px 90px', cursor: 'pointer',
       fontFamily: 'Courier New, monospace', fontWeight: 'bold',
-      textShadow: '0 0 14px #ff4400',
-      boxShadow: '0 0 28px #cc220055, inset 0 0 20px rgba(180,30,0,0.2)',
+      textShadow: '0 0 16px #ff4400, 0 2px 4px #000',
+      boxShadow: '0 0 28px #cc220055, 0 4px 24px rgba(0,0,0,0.8)',
       transition: 'all 0.18s', outline: 'none',
-      backdropFilter: 'blur(4px)',
     }}
     onClick={onClick}
     onMouseEnter={e => Object.assign(e.currentTarget.style, {
-      background: '#cc2200', textShadow: '0 0 8px #fff',
-      boxShadow: '0 0 40px #ff4400aa',
+      borderColor: '#ff4400',
+      boxShadow: '0 0 44px #ff440088, 0 4px 24px rgba(0,0,0,0.9)',
+      filter: 'brightness(1.25)',
     })}
     onMouseLeave={e => Object.assign(e.currentTarget.style, {
-      background: 'rgba(80,10,0,0.7)', textShadow: '0 0 14px #ff4400',
-      boxShadow: '0 0 28px #cc220055, inset 0 0 20px rgba(180,30,0,0.2)',
+      borderColor: '#8a3000',
+      boxShadow: '0 0 28px #cc220055, 0 4px 24px rgba(0,0,0,0.8)',
+      filter: 'brightness(1)',
     })}
     >► &nbsp;GIOCA</button>
   )
