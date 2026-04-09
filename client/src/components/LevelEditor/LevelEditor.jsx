@@ -171,7 +171,12 @@ export default function LevelEditor() {
   const floorCount = grid.flat().filter(c => c === CELL.FLOOR).length
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div style={{
+      display: 'flex', flexDirection: 'column', height: '100%',
+      backgroundImage: 'url(/bg-levels.png)',
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+    }}>
       <PageHeader title="Editor Livelli" icon="/card-livelli.png" />
       {/* ── View mode tabs ── */}
       <div className="tab-bar">
@@ -181,7 +186,7 @@ export default function LevelEditor() {
 
       <div className="editor-layout" style={{ flex: 1, overflow: 'hidden' }}>
         {/* ── Left panel ── */}
-        <div className="editor-panel">
+        <div className="editor-panel" style={{ background: 'rgba(6,4,2,0.88)' }}>
           <div className="panel-section">
             <div className="panel-title">Livello</div>
             <div className="field">
@@ -255,7 +260,7 @@ export default function LevelEditor() {
         </div>
 
         {/* ── Center: grid / 3D ── */}
-        <div className="editor-main" style={{ overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0a0a0a' }}>
+        <div className="editor-main" style={{ overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(4,2,1,0.55)' }}>
           {viewMode === '2d' ? (
             <div
               style={{ display: 'inline-block', cursor: 'crosshair', userSelect: 'none' }}

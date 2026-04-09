@@ -61,6 +61,7 @@ export default function Home() {
       {/* ── Top-right bar: sound + user ── */}
       <div style={{
         position: 'absolute', top: 12, right: 16,
+        zIndex: 10,
         display: 'flex', alignItems: 'center', gap: 10,
         background: 'rgba(0,0,0,0.55)',
         border: '1px solid rgba(120,40,0,0.4)',

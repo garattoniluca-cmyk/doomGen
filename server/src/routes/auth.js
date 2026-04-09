@@ -88,6 +88,29 @@ router.post('/google', async (req, res) => {
   }
 })
 
+// POST /api/auth/dev-login — solo in sviluppo, login diretto per ID utente
+router.post('/dev-login', async (req, res) => {
+  if (process.env.NODE_ENV === 'production') return res.status(403).json({ error: 'Non disponibile in produzione' })
+  const { userId } = req.body
+  if (!userId) return res.status(400).json({ error: 'userId mancante' })
+  try {
+    const [rows] = await pool.query('SELECT * FROM users WHERE id = ?', [userId])
+    if (!rows.length) return res.status(404).json({ error: 'Utente non trovato' })
+    const user = rows[0]
+    const [adminRow] = await pool.query('SELECT id FROM admins WHERE user_id = ?', [user.id])
+    const isAdmin = adminRow.length > 0
+    const ip = clientIp(req)
+    const [sessionResult] = await pool.query('INSERT INTO user_sessions (user_id, ip) VALUES (?, ?)', [user.id, ip])
+    const sessionId = sessionResult.insertId
+    await pool.query('UPDATE users SET last_seen = NOW(), current_page = ? WHERE id = ?', ['home', user.id])
+    user.isAdmin = isAdmin
+    const token = signToken(user, sessionId)
+    res.json({ token, user: { id: user.id, email: user.email, name: user.name, avatar: user.avatar_url, isAdmin } })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // GET /api/auth/me
 router.get('/me', async (req, res) => {
   const token = req.headers.authorization?.split(' ')[1]
