@@ -69,9 +69,14 @@ export async function initDB() {
     for (const sql of TABLES) {
       await conn.query(sql)
     }
-    // Add columns if missing (idempotent)
+    // Users columns
     await conn.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen    DATETIME     DEFAULT NULL`)
     await conn.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS current_page VARCHAR(50)  DEFAULT NULL`)
+    // Monster columns
+    await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS geometry     JSON         DEFAULT NULL`)
+    await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS thumbnail    MEDIUMTEXT   DEFAULT NULL`)
+    await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS sight_range  INT          DEFAULT 10`)
+    await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS attack_range INT          DEFAULT 2`)
 
     // Session tracking table (one row per session)
     await conn.query(`
