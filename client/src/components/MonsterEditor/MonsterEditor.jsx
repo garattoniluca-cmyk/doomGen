@@ -181,10 +181,21 @@ export default function MonsterEditor() {
         </div>
 
         {/* ── CENTER: 3D scene ── */}
-        <div style={{ flex:1, overflow:'hidden' }}>
+        <div style={{ flex:1, overflow:'hidden', position:'relative' }}>
+          {/* Background image always visible */}
+          <div style={{
+            position:'absolute', inset:0,
+            backgroundImage:'url(/bg-monsters.png)',
+            backgroundSize:'cover', backgroundPosition:'center',
+            opacity: editing ? 0.18 : 0.55,
+            transition:'opacity 0.4s',
+            pointerEvents:'none',
+          }} />
           {!editing ? (
-            <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center',
-              background:'#3a7aaa', color:'#1a3a5a', fontSize:12, letterSpacing:4, textAlign:'center', lineHeight:2 }}>
+            <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center',
+              justifyContent:'center', position:'relative',
+              color:'#00eedd', fontSize:12, letterSpacing:4, textAlign:'center', lineHeight:2,
+              textShadow:'0 0 16px #00ffee, 0 2px 6px #000' }}>
               SELEZIONA UN MOSTRO<br/>O CREANE UNO NUOVO
             </div>
           ) : (
