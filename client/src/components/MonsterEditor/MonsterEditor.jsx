@@ -151,14 +151,16 @@ export default function MonsterEditor() {
   const delPart = (id) => { setEditing(e=>({...e,geometry:{...e.geometry,parts:e.geometry.parts.filter(p=>p.id!==id)}})); if(expandedPart===id) setExpandedPart(null) }
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', height:'100%', fontFamily:'Courier New, monospace', background:C.bg }}>
+    <div style={{ display:'flex', flexDirection:'column', height:'100%', fontFamily:'Courier New, monospace',
+      backgroundImage:'url(/bg-monsters.png)', backgroundSize:'cover', backgroundPosition:'center', position:'relative' }}>
+
       <PageHeader title="Editor Mostri" icon="/card-mostri.png" />
 
       {/* ── 3-column layout ── */}
       <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
 
         {/* ── LEFT: monster list ── */}
-        <div style={{ width:240, background:C.bg, borderRight:`1px solid ${C.border}`, display:'flex', flexDirection:'column', flexShrink:0 }}>
+        <div style={{ width:240, background:'rgba(6,4,2,0.88)', borderRight:`1px solid ${C.border}`, display:'flex', flexDirection:'column', flexShrink:0 }}>
           <div style={{ padding:'10px', borderBottom:`1px solid ${C.border}` }}>
             <button onClick={newMonster}
               style={{ width:'100%', background:C.bgBtn, border:`1px solid ${C.redDim}`, color:C.txtAccent,
@@ -180,20 +182,11 @@ export default function MonsterEditor() {
           </div>
         </div>
 
-        {/* ── CENTER: 3D scene ── */}
+        {/* ── CENTER: 3D scene (transparent — bg-monsters shows through) ── */}
         <div style={{ flex:1, overflow:'hidden', position:'relative' }}>
-          {/* Background image always visible */}
-          <div style={{
-            position:'absolute', inset:0,
-            backgroundImage:'url(/bg-monsters.png)',
-            backgroundSize:'cover', backgroundPosition:'center',
-            opacity: editing ? 0.18 : 0.55,
-            transition:'opacity 0.4s',
-            pointerEvents:'none',
-          }} />
           {!editing ? (
             <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center',
-              justifyContent:'center', position:'relative',
+              justifyContent:'center',
               color:'#00eedd', fontSize:12, letterSpacing:4, textAlign:'center', lineHeight:2,
               textShadow:'0 0 16px #00ffee, 0 2px 6px #000' }}>
               SELEZIONA UN MOSTRO<br/>O CREANE UNO NUOVO
@@ -204,7 +197,7 @@ export default function MonsterEditor() {
         </div>
 
         {/* ── RIGHT: inspector ── */}
-        <div style={{ width:320, background:C.bgPanel, borderLeft:`1px solid ${C.border}`, display:'flex', flexDirection:'column', flexShrink:0 }}>
+        <div style={{ width:320, background:'rgba(10,7,5,0.90)', borderLeft:`1px solid ${C.border}`, display:'flex', flexDirection:'column', flexShrink:0 }}>
           {!editing ? (
             <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center',
               color:C.txtGhost, fontSize:11, letterSpacing:3, textAlign:'center' }}>
