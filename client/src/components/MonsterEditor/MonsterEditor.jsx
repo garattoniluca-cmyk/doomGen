@@ -77,7 +77,7 @@ const DEFAULT_GEOMETRY = {
 const DEFAULT_STATE = () => ({
   id: null, name: 'Nuovo Mostro',
   // movimento
-  move_type: 'walk', speed: 5, rotate_speed: 90, behavior: 'patrol',
+  move_type: 'walk', speed: 5, rotate_speed: 90, hover_height: 1.5,
   // visuale
   sight_range: 10, fov_angle: 90,
   // vita
@@ -87,7 +87,6 @@ const DEFAULT_STATE = () => ({
   attack_range: 2, damage: 20, melee_rate: 1,
   ranged_range: 15, ranged_damage: 15, ranged_rate: 0.5,
   // altro
-  resistances: { fire:0, ice:0, bullet:0 },
   geometry: { v:1, parts: DEFAULT_GEOMETRY.parts.map(p => ({...p})) },
   lore: '',
   sounds: randomMonsterSounds('Nuovo Mostro'),
@@ -255,13 +254,12 @@ export default function MonsterEditor() {
   const selectMonster = (m) => {
     undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
     const s = { id:m.id, name:m.name,
-      move_type: m.move_type||'walk', speed:m.speed??5, rotate_speed:m.rotate_speed??90, behavior:m.behavior||'patrol',
+      move_type: m.move_type||'walk', speed:m.speed??5, rotate_speed:m.rotate_speed??90, hover_height:m.hover_height??1.5,
       sight_range:m.sight_range??10, fov_angle:m.fov_angle??90,
       health:m.health??100, hp_regen:m.hp_regen??0, hp_regen_rate:m.hp_regen_rate??0,
       attack_type:m.attack_type||'melee',
       attack_range:m.attack_range??2, damage:m.damage??20, melee_rate:m.melee_rate??1,
       ranged_range:m.ranged_range??15, ranged_damage:m.ranged_damage??15, ranged_rate:m.ranged_rate??0.5,
-      resistances:m.resistances||{fire:0,ice:0,bullet:0},
       geometry:m.geometry||{v:1,parts:[]}, lore:m.lore||'',
       sounds:m.sounds||randomMonsterSounds(m.name||'monster') }
     curRef.current = s; savedRef.current = s; setEditing(s)
@@ -298,14 +296,14 @@ export default function MonsterEditor() {
         method: editing.id ? 'PUT' : 'POST',
         headers: { Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
         body: JSON.stringify({
-          name:editing.name, behavior:editing.behavior,
-          move_type:editing.move_type, speed:editing.speed, rotate_speed:editing.rotate_speed,
+          name:editing.name,
+          move_type:editing.move_type, speed:editing.speed, rotate_speed:editing.rotate_speed, hover_height:editing.hover_height,
           sight_range:editing.sight_range, fov_angle:editing.fov_angle,
           health:editing.health, hp_regen:editing.hp_regen, hp_regen_rate:editing.hp_regen_rate,
           attack_type:editing.attack_type,
           attack_range:editing.attack_range, damage:editing.damage, melee_rate:editing.melee_rate,
           ranged_range:editing.ranged_range, ranged_damage:editing.ranged_damage, ranged_rate:editing.ranged_rate,
-          resistances:editing.resistances, geometry:editing.geometry, thumbnail, lore:editing.lore,
+          geometry:editing.geometry, thumbnail, lore:editing.lore,
           sounds:editing.sounds,
         }),
       })
@@ -337,13 +335,12 @@ export default function MonsterEditor() {
     const s = {
       id: null,
       name: m.name + ' (copia)',
-      move_type: m.move_type||'walk', speed: m.speed??5, rotate_speed: m.rotate_speed??90, behavior: m.behavior||'patrol',
+      move_type: m.move_type||'walk', speed: m.speed??5, rotate_speed: m.rotate_speed??90, hover_height: m.hover_height??1.5,
       sight_range: m.sight_range??10, fov_angle: m.fov_angle??90,
       health: m.health??100, hp_regen: m.hp_regen??0, hp_regen_rate: m.hp_regen_rate??0,
       attack_type: m.attack_type||'melee',
       attack_range: m.attack_range??2, damage: m.damage??20, melee_rate: m.melee_rate??1,
       ranged_range: m.ranged_range??15, ranged_damage: m.ranged_damage??15, ranged_rate: m.ranged_rate??0.5,
-      resistances: m.resistances || { fire:0, ice:0, bullet:0 },
       geometry: { v:1, parts: (m.geometry?.parts || []).map(p => ({ ...p, id: uid() })) },
       lore: m.lore || '',
       sounds: m.sounds ? JSON.parse(JSON.stringify(m.sounds)) : randomMonsterSounds(m.name||'monster'),
@@ -775,15 +772,10 @@ function StatsTab({ editing, set }) {
           unit={`${editing.speed}/20`} onChange={v=>set('speed',v)} />
         <Slider label="ROT. VELOCITÀ" value={editing.rotate_speed} min={10} max={360}
           color='#ffaa44' unit={`${editing.rotate_speed}°/s`} onChange={v=>set('rotate_speed',v)} />
-        <div>
-          <div style={{ color:C.txtSub, fontSize:10, letterSpacing:2, marginBottom:5 }}>COMPORTAMENTO</div>
-          <select value={editing.behavior} onChange={e=>set('behavior',e.target.value)}
-            style={{ width:'100%', background:C.bgInput, border:`1px solid ${C.borderMed}`,
-              color:C.txtBright, fontFamily:'monospace', fontSize:12, padding:'6px 8px',
-              outline:'none', cursor:'pointer' }}>
-            {BEHAVIORS.map(b => <option key={b} value={b}>{b}</option>)}
-          </select>
-        </div>
+        {editing.move_type === 'hovercraft' && (
+          <Slider label="ALTEZZA HOVERING" value={editing.hover_height} min={0.2} max={5} step={0.1}
+            color='#88ddff' unit={`${editing.hover_height}m`} onChange={v=>set('hover_height',v)} />
+        )}
       </StatSection>
 
       {/* ── VISUALE ── */}

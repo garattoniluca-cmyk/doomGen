@@ -36,6 +36,7 @@ router.get('/', requireAuth, async (req, res) => {
       ranged_range:  r.ranged_range ?? 15,
       ranged_damage: r.ranged_damage ?? 15,
       ranged_rate:   r.ranged_rate ?? 0.5,
+      hover_height:  r.hover_height ?? 1.5,
     })))
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -65,6 +66,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       ranged_range:  row.ranged_range ?? 15,
       ranged_damage: row.ranged_damage ?? 15,
       ranged_rate:   row.ranged_rate ?? 0.5,
+      hover_height:  row.hover_height ?? 1.5,
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -76,15 +78,17 @@ router.post('/', requireAuth, async (req, res) => {
   const { name, health, speed, damage, behavior, sight_range, attack_range,
           resistances, geometry, sounds, thumbnail, lore,
           move_type, rotate_speed, fov_angle, hp_regen, hp_regen_rate,
-          attack_type, melee_rate, ranged_range, ranged_damage, ranged_rate } = req.body
+          attack_type, melee_rate, ranged_range, ranged_damage, ranged_rate,
+          hover_height } = req.body
   try {
     const [result] = await pool.query(
       `INSERT INTO monsters
          (user_id, name, health, speed, damage, behavior, sight_range, attack_range,
           resistances, geometry, sounds, thumbnail, lore,
           move_type, rotate_speed, fov_angle, hp_regen, hp_regen_rate,
-          attack_type, melee_rate, ranged_range, ranged_damage, ranged_rate)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          attack_type, melee_rate, ranged_range, ranged_damage, ranged_rate,
+          hover_height)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [req.user.id, name||'Senza nome',
        health||100, speed||5, damage||20, behavior||'patrol',
        sight_range||10, attack_range||2,
@@ -95,7 +99,8 @@ router.post('/', requireAuth, async (req, res) => {
        move_type||'walk', rotate_speed??90, fov_angle??90,
        hp_regen??0, hp_regen_rate??0,
        attack_type||'melee', melee_rate??1,
-       ranged_range??15, ranged_damage??15, ranged_rate??0.5]
+       ranged_range??15, ranged_damage??15, ranged_rate??0.5,
+       hover_height??1.5]
     )
     res.status(201).json({ id: result.insertId })
   } catch (err) {
@@ -108,7 +113,8 @@ router.put('/:id', requireAuth, async (req, res) => {
   const { name, health, speed, damage, behavior, sight_range, attack_range,
           resistances, geometry, sounds, thumbnail, lore,
           move_type, rotate_speed, fov_angle, hp_regen, hp_regen_rate,
-          attack_type, melee_rate, ranged_range, ranged_damage, ranged_rate } = req.body
+          attack_type, melee_rate, ranged_range, ranged_damage, ranged_rate,
+          hover_height } = req.body
   try {
     const [result] = await pool.query(
       `UPDATE monsters SET
@@ -116,7 +122,8 @@ router.put('/:id', requireAuth, async (req, res) => {
          sight_range=?, attack_range=?,
          resistances=?, geometry=?, sounds=?, thumbnail=?, lore=?,
          move_type=?, rotate_speed=?, fov_angle=?, hp_regen=?, hp_regen_rate=?,
-         attack_type=?, melee_rate=?, ranged_range=?, ranged_damage=?, ranged_rate=?
+         attack_type=?, melee_rate=?, ranged_range=?, ranged_damage=?, ranged_rate=?,
+         hover_height=?
        WHERE id=? AND user_id=?`,
       [name||'Senza nome',
        health||100, speed||5, damage||20, behavior||'patrol',
@@ -129,6 +136,7 @@ router.put('/:id', requireAuth, async (req, res) => {
        hp_regen??0, hp_regen_rate??0,
        attack_type||'melee', melee_rate??1,
        ranged_range??15, ranged_damage??15, ranged_rate??0.5,
+       hover_height??1.5,
        req.params.id, req.user.id]
     )
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Non trovato o non autorizzato' })
