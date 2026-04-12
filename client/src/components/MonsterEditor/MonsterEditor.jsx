@@ -157,9 +157,15 @@ export default function MonsterEditor() {
 
   // ── Symmetry ─────────────────────────────────────────────────────────────────
   // symMapRef: { partId → mirrorPartId } — recomputed on load/save, volatile
-  // symActive: Set of partIds with symmetry enabled by the user
-  const symMapRef = useRef({})
-  const [symActive, setSymActive] = useState(new Set())
+  // symActiveRef: always current (avoids stale closure in memoized callbacks)
+  const symMapRef    = useRef({})
+  const symActiveRef = useRef(new Set())
+  const [symActive, _setSymActive] = useState(new Set())
+  const setSymActive = (val) => {
+    const next = typeof val === 'function' ? val(symActiveRef.current) : val
+    symActiveRef.current = next
+    _setSymActive(next)
+  }
 
   // Aggiorna stato e curRef insieme — usato da tutti i setter
   const _commit = (next) => { curRef.current = next; setEditing(next) }
@@ -171,6 +177,14 @@ export default function MonsterEditor() {
     setHistLen({ u: undoStack.current.length, r: 0 })
   }
 
+  const _rebuildSym = (state) => {
+    const map = buildSymMap(state?.geometry?.parts || [])
+    symMapRef.current = map
+    const all = new Set(Object.keys(map))
+    symActiveRef.current = all
+    _setSymActive(all)
+  }
+
   const undo = useCallback(() => {
     if (!undoStack.current.length) return
     if (curRef.current)
@@ -180,6 +194,7 @@ export default function MonsterEditor() {
     curRef.current = prev
     setEditing(prev)
     setHistLen({ u: undoStack.current.length, r: redoStack.current.length })
+    _rebuildSym(prev)
   }, [])
 
   const redo = useCallback(() => {
@@ -191,6 +206,7 @@ export default function MonsterEditor() {
     curRef.current = next
     setEditing(next)
     setHistLen({ u: undoStack.current.length, r: redoStack.current.length })
+    _rebuildSym(next)
   }, [])
 
   useEffect(() => {
@@ -221,8 +237,10 @@ export default function MonsterEditor() {
   useEffect(() => { loadMonsters() }, [loadMonsters])
 
   const _initSym = (parts) => {
-    symMapRef.current = buildSymMap(parts)
-    setSymActive(new Set())
+    const map = buildSymMap(parts)
+    symMapRef.current = map
+    // Auto-activate all detected pairs
+    setSymActive(new Set(Object.keys(map)))
   }
 
   const selectMonster = (m) => {
@@ -335,10 +353,10 @@ export default function MonsterEditor() {
   const setPart = (id, ch) => {
     _pushUndo()
     const mid = symMapRef.current[id]
-    const useSym = mid && symActive.has(id)
+    const useSym = mid && symActiveRef.current.has(id)
     const next = _applyPartChange(curRef.current, id, ch, useSym ? mid : null)
     _commit(next)
-    // Asymmetric change → break the pair
+    // Asymmetric change (sym off) → break the pair so it's not re-detected
     if (mid && !useSym) {
       const m = { ...symMapRef.current }; delete m[id]; delete m[mid]; symMapRef.current = m
       setSymActive(prev => { const s = new Set(prev); s.delete(id); s.delete(mid); return s })
@@ -348,7 +366,7 @@ export default function MonsterEditor() {
   // setPartLive: preview visivo solo — NON aggiorna curRef
   const setPartLive = (id, ch) => {
     const mid = symMapRef.current[id]
-    const useSym = mid && symActive.has(id)
+    const useSym = mid && symActiveRef.current.has(id)
     setEditing(_applyPartChange(curRef.current, id, ch, useSym ? mid : null))
   }
 
@@ -380,6 +398,24 @@ export default function MonsterEditor() {
     symMapRef.current = { ...symMapRef.current, [id1]:id2, [id2]:id1 }
     setSymActive(prev => { const s = new Set(prev); s.add(id1); s.add(id2); return s })
     setExpandedPart(id1); setSelectedPart(id1)
+  }
+
+  const copyPart = (id, withMirror) => {
+    const src = curRef.current.geometry.parts.find(p => p.id === id)
+    if (!src) return
+    const mid = symMapRef.current[id]
+    const srcMirror = (withMirror && mid) ? curRef.current.geometry.parts.find(p => p.id === mid) : null
+    const newId1 = uid()
+    const newId2 = srcMirror ? uid() : null
+    const newParts = [...curRef.current.geometry.parts, { ...src, id: newId1 },
+      ...(srcMirror ? [{ ...srcMirror, id: newId2 }] : [])]
+    _pushUndo()
+    _commit({ ...curRef.current, geometry: { ...curRef.current.geometry, parts: newParts } })
+    if (srcMirror) {
+      symMapRef.current = { ...symMapRef.current, [newId1]: newId2, [newId2]: newId1 }
+      setSymActive(prev => { const s = new Set(prev); s.add(newId1); s.add(newId2); return s })
+    }
+    setExpandedPart(newId1); setSelectedPart(newId1)
   }
 
   const delPart = (id) => {
@@ -591,7 +627,7 @@ export default function MonsterEditor() {
                   expandedPart={expandedPart} setExpandedPart={setExpandedPart}
                   selectedPart={selectedPart} setSelectedPart={setSelectedPart}
                   symMap={symMapRef.current} symActive={symActive} onSymToggle={toggleSym}
-                  onAdd={addPart} onAddPair={addSymPair} onDelete={delPart} onUpdate={setPart} onLiveUpdate={setPartLive} />}
+                  onAdd={addPart} onAddPair={addSymPair} onDelete={delPart} onCopy={copyPart} onUpdate={setPart} onLiveUpdate={setPartLive} />}
                 {tab==='sfx'      && <SfxTab sounds={editing.sounds} setSounds={setSounds} monsterName={editing.name} />}
                 {tab==='json'     && <JSONTab     editing={editing} />}
               </div>
@@ -718,7 +754,7 @@ function Slider({ label, value, min, max, color, unit, onChange }) {
 
 // ── Geometry tab ──────────────────────────────────────────────────────────────
 function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSelectedPart,
-    symMap, symActive, onSymToggle, onAdd, onAddPair, onDelete, onUpdate, onLiveUpdate }) {
+    symMap, symActive, onSymToggle, onAdd, onAddPair, onDelete, onCopy, onUpdate, onLiveUpdate }) {
   const allColors = [...new Set(parts.map(p=>p.color).filter(Boolean))]
   const Btn = ({ onClick, children, title }) => (
     <button onClick={onClick} title={title}
@@ -747,6 +783,7 @@ function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSe
           hasMirror={!!symMap[part.id]}
           symOn={symActive.has(part.id)}
           onSymToggle={()=>onSymToggle(part.id)}
+          onCopy={(withMirror)=>onCopy(part.id, withMirror)}
           onToggle={() => {
             const next = expandedPart===part.id ? null : part.id
             setExpandedPart(next)
@@ -760,7 +797,7 @@ function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSe
   )
 }
 
-function PartRow({ part, expanded, selected, allColors, hasMirror, symOn, onSymToggle, onToggle, onUpdate, onLiveUpdate, onDelete }) {
+function PartRow({ part, expanded, selected, allColors, hasMirror, symOn, onSymToggle, onCopy, onToggle, onUpdate, onLiveUpdate, onDelete }) {
   const borderColor = selected ? C.red : expanded ? C.borderMed : C.border
   const bg = selected ? '#200a00' : expanded ? '#150900' : '#0d0603'
   return (
@@ -793,6 +830,12 @@ function PartRow({ part, expanded, selected, allColors, hasMirror, symOn, onSymT
             ⟺
           </button>
         )}
+        <button className="me-btn-icon"
+          title={hasMirror ? 'Copia parte (click) / copia coppia (shift+click)' : 'Copia parte'}
+          onClick={e=>{e.stopPropagation(); onCopy(hasMirror && e.shiftKey)}}
+          style={{ background:'transparent', border:'none', color:C.txtGhost,
+            cursor:'pointer', fontSize:13, lineHeight:1, padding:'0 2px',
+            flexShrink:0, transition:'color 0.15s' }}>⧉</button>
         <button className="me-btn-icon" onClick={e=>{e.stopPropagation();onDelete()}}
           style={{ background:'transparent', border:'none', color:C.txtGhost,
             cursor:'pointer', fontSize:16, lineHeight:1, padding:'0 2px',
