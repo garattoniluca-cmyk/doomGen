@@ -16,7 +16,7 @@ router.get('/', requireAuth, async (req, res) => {
     const [rows] = await pool.query(
       `SELECT id, name, health, speed, damage, behavior, sight_range, attack_range,
               resistances, geometry, thumbnail, lore, created_at
-       FROM monsters WHERE user_id = ? ORDER BY created_at DESC`,
+       FROM monsters WHERE user_id = ? AND active = 1 ORDER BY created_at DESC`,
       [req.user.id]
     )
     res.json(rows.map(r => ({
@@ -33,7 +33,7 @@ router.get('/', requireAuth, async (req, res) => {
 router.get('/:id', requireAuth, async (req, res) => {
   try {
     const [[row]] = await pool.query(
-      'SELECT * FROM monsters WHERE id = ? AND user_id = ?',
+      'SELECT * FROM monsters WHERE id = ? AND user_id = ? AND active = 1',
       [req.params.id, req.user.id]
     )
     if (!row) return res.status(404).json({ error: 'Non trovato' })
@@ -96,11 +96,11 @@ router.put('/:id', requireAuth, async (req, res) => {
   }
 })
 
-// DELETE /api/monsters/:id
+// DELETE /api/monsters/:id — soft delete (active = 0)
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const [r] = await pool.query(
-      'DELETE FROM monsters WHERE id = ? AND user_id = ?',
+      'UPDATE monsters SET active = 0 WHERE id = ? AND user_id = ?',
       [req.params.id, req.user.id]
     )
     if (r.affectedRows === 0) return res.status(404).json({ error: 'Non trovato o non autorizzato' })

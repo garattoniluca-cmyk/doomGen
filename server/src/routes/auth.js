@@ -99,6 +99,13 @@ router.post('/dev-login', async (req, res) => {
     const user = rows[0]
     const [adminRow] = await pool.query('SELECT id FROM admins WHERE user_id = ?', [user.id])
     const isAdmin = adminRow.length > 0
+    // Close any dangling open sessions
+    await pool.query(
+      `UPDATE user_sessions SET logout_at = NOW(),
+        duration_secs = TIMESTAMPDIFF(SECOND, login_at, NOW()), logout_reason = 'system'
+       WHERE user_id = ? AND logout_at IS NULL`,
+      [user.id]
+    )
     const ip = clientIp(req)
     const [sessionResult] = await pool.query('INSERT INTO user_sessions (user_id, ip) VALUES (?, ?)', [user.id, ip])
     const sessionId = sessionResult.insertId

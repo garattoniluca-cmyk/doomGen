@@ -26,3 +26,11 @@ export async function apiPost(path, body) {
 export async function apiDelete(path) {
   return fetch(`/api${path}`, { method: 'DELETE', headers: authHeaders() })
 }
+
+export async function apiPatch(path, body) {
+  return fetch(`/api${path}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: body ? JSON.stringify(body) : undefined,
+  })
+}

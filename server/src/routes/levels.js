@@ -12,7 +12,7 @@ router.post('/generate', (_req, res) => {
 router.get('/', requireAuth, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      'SELECT id,name,description,created_at FROM levels WHERE user_id = ? ORDER BY created_at DESC',
+      'SELECT id,name,description,created_at FROM levels WHERE user_id = ? AND active = 1 ORDER BY created_at DESC',
       [req.user.id]
     )
     res.json(rows)
@@ -49,10 +49,11 @@ router.post('/', requireAuth, async (req, res) => {
   }
 })
 
+// Soft delete (active = 0)
 router.delete('/:id', requireAuth, async (req, res) => {
   try {
     const [r] = await pool.query(
-      'DELETE FROM levels WHERE id = ? AND user_id = ?',
+      'UPDATE levels SET active = 0 WHERE id = ? AND user_id = ?',
       [req.params.id, req.user.id]
     )
     if (r.affectedRows === 0) return res.status(404).json({ error: 'Non trovato o non autorizzato' })

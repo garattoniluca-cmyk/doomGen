@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext.jsx'
-import { apiGet, apiPost, apiDelete } from '../../utils/api.js'
+import { apiGet, apiPost, apiDelete, apiPatch } from '../../utils/api.js'
 import PageHeader from '../PageHeader.jsx'
 
 const TABS = ['Dashboard', 'Online', 'Utenti', 'Mostri', 'Superfici', 'Livelli', 'Attività']
@@ -16,9 +16,10 @@ const PAGE_LABELS = {
 
 export default function AdminPanel() {
   const { user } = useAuth()
-  const [tab, setTab]     = useState('Dashboard')
-  const [data, setData]   = useState({})
+  const [tab, setTab]         = useState('Dashboard')
+  const [data, setData]       = useState({})
   const [loading, setLoading] = useState(false)
+  const [activeFilter, setActiveFilter] = useState('tutti')
   const onlineTimerRef = useRef(null)
 
   const load = useCallback(async () => {
@@ -53,11 +54,11 @@ export default function AdminPanel() {
 
   useEffect(() => { load() }, [load])
 
-  // Auto-refresh Online tab every 15s
+  // Auto-refresh Online and Attività tabs every 30s
   useEffect(() => {
     clearInterval(onlineTimerRef.current)
-    if (tab === 'Online') {
-      onlineTimerRef.current = setInterval(load, 15_000)
+    if (tab === 'Online' || tab === 'Attività') {
+      onlineTimerRef.current = setInterval(load, 30_000)
     }
     return () => clearInterval(onlineTimerRef.current)
   }, [tab, load])
@@ -70,10 +71,25 @@ export default function AdminPanel() {
     )
   }
 
+  // Reset filter when changing tab
+  const switchTab = (t) => { setTab(t); setActiveFilter('tutti') }
+
   const del = async (endpoint, id) => {
-    if (!confirm('Eliminare questo elemento?')) return
+    if (!confirm('Eliminare definitivamente questo elemento dal database?')) return
     await apiDelete(`/admin/${endpoint}/${id}`)
     load()
+  }
+
+  const restore = async (endpoint, id) => {
+    await apiPatch(`/admin/${endpoint}/${id}/restore`)
+    load()
+  }
+
+  const filterList = (list) => {
+    if (!list) return []
+    if (activeFilter === 'attivi')   return list.filter(x => x.active === 1 || x.active === true)
+    if (activeFilter === 'eliminati') return list.filter(x => x.active === 0 || x.active === false)
+    return list
   }
 
   const promote = async (id) => { await apiPost(`/admin/users/${id}/promote`); load() }
@@ -87,7 +103,7 @@ export default function AdminPanel() {
       <div className="tab-bar">
         {TABS.map(t => (
           <div key={t} className={`tab ${tab === t ? 'active' : ''}`}
-            onClick={() => setTab(t)}
+            onClick={() => switchTab(t)}
             style={t === 'Online' ? { position:'relative' } : {}}
           >
             {t}
@@ -206,45 +222,66 @@ export default function AdminPanel() {
 
         {/* ── Mostri ── */}
         {tab === 'Mostri' && !loading && (
-          <ContentTable
-            columns={['Nome','Utente','HP','Speed','Comportamento','Data','Azioni']}
-            rows={(data.list || []).map(m => [
-              m.name,
-              <span key="u" style={{color:'#666',fontSize:11}}>{m.user_name}</span>,
-              m.health, m.speed, m.behavior,
-              <DateCell key="d" val={m.created_at} />,
-              <ActionBtn key="del" label="Elimina" color="#cc2200" onClick={() => del('monsters', m.id)} />
-            ])}
-          />
+          <>
+            <ActiveFilterBar filter={activeFilter} onChange={setActiveFilter} list={data.list||[]} />
+            <ContentTable
+              columns={['Stato','Nome','Utente','HP','Speed','Comportamento','Data','Azioni']}
+              rows={filterList(data.list).map(m => [
+                <ActiveBadge key="a" active={m.active} />,
+                <span key="n" style={{textDecoration:m.active?'none':'line-through',opacity:m.active?1:0.5}}>{m.name}</span>,
+                <span key="u" style={{color:'#666',fontSize:11}}>{m.user_name}</span>,
+                m.health, m.speed, m.behavior,
+                <DateCell key="d" val={m.created_at} />,
+                <div key="act" style={{display:'flex',gap:4}}>
+                  {!m.active && <ActionBtn label="Ripristina" color="#226622" onClick={() => restore('monsters', m.id)} />}
+                  <ActionBtn label="Elimina" color="#cc2200" onClick={() => del('monsters', m.id)} />
+                </div>
+              ])}
+            />
+          </>
         )}
 
         {/* ── Superfici ── */}
         {tab === 'Superfici' && !loading && (
-          <ContentTable
-            columns={['Nome','Utente','Tipo','Pattern','Colore','Data','Azioni']}
-            rows={(data.list || []).map(s => [
-              s.name,
-              <span key="u" style={{color:'#666',fontSize:11}}>{s.user_name}</span>,
-              s.surface_type, s.pattern,
-              <ColorSwatch key="c" color={s.primary_color} />,
-              <DateCell key="d" val={s.created_at} />,
-              <ActionBtn key="del" label="Elimina" color="#cc2200" onClick={() => del('surfaces', s.id)} />
-            ])}
-          />
+          <>
+            <ActiveFilterBar filter={activeFilter} onChange={setActiveFilter} list={data.list||[]} />
+            <ContentTable
+              columns={['Stato','Nome','Utente','Tipo','Pattern','Colore','Data','Azioni']}
+              rows={filterList(data.list).map(s => [
+                <ActiveBadge key="a" active={s.active} />,
+                <span key="n" style={{textDecoration:s.active?'none':'line-through',opacity:s.active?1:0.5}}>{s.name}</span>,
+                <span key="u" style={{color:'#666',fontSize:11}}>{s.user_name}</span>,
+                s.surface_type, s.pattern,
+                <ColorSwatch key="c" color={s.primary_color} />,
+                <DateCell key="d" val={s.created_at} />,
+                <div key="act" style={{display:'flex',gap:4}}>
+                  {!s.active && <ActionBtn label="Ripristina" color="#226622" onClick={() => restore('surfaces', s.id)} />}
+                  <ActionBtn label="Elimina" color="#cc2200" onClick={() => del('surfaces', s.id)} />
+                </div>
+              ])}
+            />
+          </>
         )}
 
         {/* ── Livelli ── */}
         {tab === 'Livelli' && !loading && (
-          <ContentTable
-            columns={['Nome','Utente','Descrizione','Data','Azioni']}
-            rows={(data.list || []).map(l => [
-              l.name,
-              <span key="u" style={{color:'#666',fontSize:11}}>{l.user_name}</span>,
-              <span key="d" style={{color:'#555',fontSize:11}}>{l.description || '—'}</span>,
-              <DateCell key="dt" val={l.created_at} />,
-              <ActionBtn key="del" label="Elimina" color="#cc2200" onClick={() => del('levels', l.id)} />
-            ])}
-          />
+          <>
+            <ActiveFilterBar filter={activeFilter} onChange={setActiveFilter} list={data.list||[]} />
+            <ContentTable
+              columns={['Stato','Nome','Utente','Descrizione','Data','Azioni']}
+              rows={filterList(data.list).map(l => [
+                <ActiveBadge key="a" active={l.active} />,
+                <span key="n" style={{textDecoration:l.active?'none':'line-through',opacity:l.active?1:0.5}}>{l.name}</span>,
+                <span key="u" style={{color:'#666',fontSize:11}}>{l.user_name}</span>,
+                <span key="d" style={{color:'#555',fontSize:11}}>{l.description || '—'}</span>,
+                <DateCell key="dt" val={l.created_at} />,
+                <div key="act" style={{display:'flex',gap:4}}>
+                  {!l.active && <ActionBtn label="Ripristina" color="#226622" onClick={() => restore('levels', l.id)} />}
+                  <ActionBtn label="Elimina" color="#cc2200" onClick={() => del('levels', l.id)} />
+                </div>
+              ])}
+            />
+          </>
         )}
 
         {/* ── Attività ── */}
@@ -275,6 +312,49 @@ export default function AdminPanel() {
         )}
       </div>
     </div>
+  )
+}
+
+// ── Active filter bar ─────────────────────────────────────────────────────────
+function ActiveFilterBar({ filter, onChange, list }) {
+  const total    = list.length
+  const active   = list.filter(x => x.active === 1 || x.active === true).length
+  const deleted  = total - active
+  const opts = [
+    { val:'tutti',    label:`TUTTI (${total})` },
+    { val:'attivi',   label:`ATTIVI (${active})` },
+    { val:'eliminati',label:`ELIMINATI (${deleted})` },
+  ]
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 16px', borderBottom:'1px solid #1a0800' }}>
+      {opts.map(o => (
+        <button key={o.val} onClick={() => onChange(o.val)}
+          style={{
+            background: filter===o.val ? (o.val==='eliminati'?'#3a0000': o.val==='attivi'?'#0d2a0d':'#1a0a00') : 'transparent',
+            border: `1px solid ${filter===o.val ? (o.val==='eliminati'?'#882200':o.val==='attivi'?'#336633':'#441100') : '#1a0800'}`,
+            color: filter===o.val ? (o.val==='eliminati'?'#ff5533':o.val==='attivi'?'#66cc66':'#cc7744') : '#443322',
+            fontFamily:'monospace', fontSize:10, letterSpacing:1, padding:'4px 12px',
+            cursor:'pointer', transition:'all 0.12s',
+          }}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── Active badge ──────────────────────────────────────────────────────────────
+function ActiveBadge({ active }) {
+  const on = active === 1 || active === true
+  return (
+    <span style={{
+      display:'inline-block', padding:'2px 6px', fontSize:9, letterSpacing:1,
+      fontFamily:'monospace', border:`1px solid ${on?'#336633':'#552200'}`,
+      color: on ? '#66cc66' : '#cc4422',
+      background: on ? '#0d1a0d' : '#1a0500',
+    }}>
+      {on ? 'ON' : 'OFF'}
+    </span>
   )
 }
 

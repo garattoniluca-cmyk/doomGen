@@ -67,10 +67,12 @@ export default function MonsterViewer({
   const mountRef          = useRef(null)
   const ctx               = useRef({})
   const meshMapRef        = useRef({})
-  const onPartSelectRef   = useRef(onPartSelect)
+  const onPartSelectRef    = useRef(onPartSelect)
   const onPartTransformRef = useRef(onPartTransform)
+  const selectedPartIdRef  = useRef(selectedPartId)
   useEffect(() => { onPartSelectRef.current   = onPartSelect   }, [onPartSelect])
   useEffect(() => { onPartTransformRef.current = onPartTransform }, [onPartTransform])
+  useEffect(() => { selectedPartIdRef.current  = selectedPartId  }, [selectedPartId])
 
   // ── Main setup ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -245,6 +247,10 @@ export default function MonsterViewer({
         if (!renderer || !el) return
         const W = el.clientWidth, H = el.clientHeight
         const savedPos = camera.position.clone(), savedAspect = camera.aspect
+        // Temporarily remove outline for clean thumbnail
+        const selId = selectedPartIdRef.current
+        const selMesh = selId ? meshMapRef.current[selId] : null
+        if (selMesh) removeOutline(selMesh)
         camera.aspect = 160 / 120; camera.updateProjectionMatrix()
         camera.position.set(
           THUMB.r * Math.sin(THUMB.theta) * Math.cos(THUMB.phi),
@@ -255,6 +261,8 @@ export default function MonsterViewer({
         renderer.setSize(160, 120, false)
         renderer.render(scene, camera)
         const src = renderer.domElement.toDataURL('image/jpeg', 0.85)
+        // Restore outline and viewport
+        if (selMesh) addOutline(selMesh)
         renderer.setSize(W, H, false)
         camera.position.copy(savedPos); camera.aspect = savedAspect; camera.updateProjectionMatrix()
         onThumbnailCapture(src)

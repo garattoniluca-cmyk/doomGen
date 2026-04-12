@@ -10,9 +10,9 @@ router.get('/stats', async (_req, res) => {
   try {
     const [[{ users }]]    = await pool.query('SELECT COUNT(*) AS users FROM users')
     const [[{ admins }]]   = await pool.query('SELECT COUNT(*) AS admins FROM admins')
-    const [[{ monsters }]] = await pool.query('SELECT COUNT(*) AS monsters FROM monsters')
-    const [[{ surfaces }]] = await pool.query('SELECT COUNT(*) AS surfaces FROM surfaces')
-    const [[{ levels }]]   = await pool.query('SELECT COUNT(*) AS levels FROM levels')
+    const [[{ monsters }]] = await pool.query('SELECT COUNT(*) AS monsters FROM monsters WHERE active = 1')
+    const [[{ surfaces }]] = await pool.query('SELECT COUNT(*) AS surfaces FROM surfaces WHERE active = 1')
+    const [[{ levels }]]   = await pool.query('SELECT COUNT(*) AS levels FROM levels WHERE active = 1')
     const [[{ online }]]   = await pool.query(
       `SELECT COUNT(*) AS online FROM users WHERE last_seen >= NOW() - INTERVAL 3 MINUTE`
     )
@@ -29,11 +29,12 @@ router.get('/online', async (_req, res) => {
       SELECT u.id, u.name, u.email, u.avatar_url AS avatar,
              u.current_page AS page,
              TIMESTAMPDIFF(SECOND, u.last_seen, NOW()) AS seconds_ago,
-             s.login_at,
-             TIMESTAMPDIFF(SECOND, s.login_at, NOW()) AS session_secs
+             MAX(s.login_at) AS login_at,
+             TIMESTAMPDIFF(SECOND, MAX(s.login_at), NOW()) AS session_secs
       FROM users u
       JOIN user_sessions s ON s.user_id = u.id AND s.logout_at IS NULL
       WHERE u.last_seen >= NOW() - INTERVAL 3 MINUTE
+      GROUP BY u.id
       ORDER BY u.last_seen DESC
     `)
     res.json(rows)
@@ -138,6 +139,15 @@ router.delete('/monsters/:id', async (req, res) => {
   }
 })
 
+router.patch('/monsters/:id/restore', async (req, res) => {
+  try {
+    await pool.query('UPDATE monsters SET active = 1 WHERE id = ?', [req.params.id])
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ── Content: surfaces ────────────────────────────────────────────────────────
 router.get('/surfaces', async (_req, res) => {
   try {
@@ -161,11 +171,20 @@ router.delete('/surfaces/:id', async (req, res) => {
   }
 })
 
+router.patch('/surfaces/:id/restore', async (req, res) => {
+  try {
+    await pool.query('UPDATE surfaces SET active = 1 WHERE id = ?', [req.params.id])
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ── Content: levels ──────────────────────────────────────────────────────────
 router.get('/levels', async (_req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT l.id, l.name, l.description, l.created_at,
+      SELECT l.id, l.name, l.description, l.active, l.created_at,
              u.email AS user_email, u.name AS user_name
       FROM levels l JOIN users u ON u.id = l.user_id
       ORDER BY l.created_at DESC
@@ -179,6 +198,15 @@ router.get('/levels', async (_req, res) => {
 router.delete('/levels/:id', async (req, res) => {
   try {
     await pool.query('DELETE FROM levels WHERE id = ?', [req.params.id])
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+router.patch('/levels/:id/restore', async (req, res) => {
+  try {
+    await pool.query('UPDATE levels SET active = 1 WHERE id = ?', [req.params.id])
     res.json({ ok: true })
   } catch (err) {
     res.status(500).json({ error: err.message })

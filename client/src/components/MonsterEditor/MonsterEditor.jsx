@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import PageHeader from '../PageHeader.jsx'
 import MonsterViewer from './MonsterViewer.jsx'
@@ -24,6 +24,7 @@ if (!document.getElementById(STYLE_ID)) {
     .me-btn-icon:hover { color: #ff4400 !important; }
     .me-part-row:hover { border-color: #441800 !important; }
     .me-card:hover .me-card-delete { opacity: 1 !important; }
+    .me-card:hover .me-card-actions { opacity: 1 !important; }
   `
   document.head.appendChild(s)
 }
@@ -98,6 +99,49 @@ export default function MonsterEditor() {
   const [transformMode, setTransformMode] = useState('translate')
   const [transformSpace, setTransformSpace] = useState('world')
 
+  // ── Undo / Redo ───────────────────────────────────────────────────────────────
+  const undoStack  = useRef([])
+  const redoStack  = useRef([])
+  const editingRef = useRef(null)
+  const [histLen, setHistLen] = useState({ u:0, r:0 })
+  useEffect(() => { editingRef.current = editing }, [editing])
+
+  const pushUndo = useCallback(() => {
+    if (!editingRef.current) return
+    undoStack.current = [...undoStack.current.slice(-49), editingRef.current]
+    redoStack.current = []
+    setHistLen({ u: undoStack.current.length, r: 0 })
+  }, [])
+
+  const undo = useCallback(() => {
+    if (!undoStack.current.length) return
+    redoStack.current = editingRef.current
+      ? [editingRef.current, ...redoStack.current.slice(0, 49)]
+      : redoStack.current
+    setEditing(undoStack.current[undoStack.current.length - 1])
+    undoStack.current = undoStack.current.slice(0, -1)
+    setHistLen({ u: undoStack.current.length, r: redoStack.current.length })
+  }, [])
+
+  const redo = useCallback(() => {
+    if (!redoStack.current.length) return
+    if (editingRef.current)
+      undoStack.current = [...undoStack.current.slice(0, 49), editingRef.current]
+    setEditing(redoStack.current[0])
+    redoStack.current = redoStack.current.slice(1)
+    setHistLen({ u: undoStack.current.length, r: redoStack.current.length })
+  }, [])
+
+  useEffect(() => {
+    const handler = e => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
+      else if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) { e.preventDefault(); redo() }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [undo, redo])
+
   const loadMonsters = useCallback(async () => {
     try {
       const r = await fetch('/api/monsters', { headers: { Authorization:`Bearer ${token}` } })
@@ -108,6 +152,7 @@ export default function MonsterEditor() {
   useEffect(() => { loadMonsters() }, [loadMonsters])
 
   const selectMonster = (m) => {
+    undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
     setEditing({ id:m.id, name:m.name, health:m.health, speed:m.speed, damage:m.damage,
       behavior:m.behavior, sight_range:m.sight_range??10, attack_range:m.attack_range??2,
       resistances:m.resistances||{fire:0,ice:0,bullet:0},
@@ -116,13 +161,13 @@ export default function MonsterEditor() {
   }
 
   const newMonster = () => {
+    undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
     setEditing(DEFAULT_STATE()); setThumbnail(null); setTab('stats'); setExpandedPart(null); setSelectedPart(null)
   }
 
   const handlePartSelect = useCallback((partId) => {
     setSelectedPart(partId)
     setExpandedPart(partId)
-    setTab('geometry')
   }, [])
 
   const handlePartTransform = useCallback((partId, updates) => {
@@ -150,6 +195,25 @@ export default function MonsterEditor() {
     } finally { setSaving(false) }
   }
 
+  const duplicateMonster = () => {
+    if (!editing) return
+    duplicateFrom(editing)
+  }
+
+  const duplicateFrom = (m) => {
+    undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
+    setEditing({
+      id: null,
+      name: m.name + ' (copia)',
+      health: m.health, speed: m.speed, damage: m.damage,
+      behavior: m.behavior, sight_range: m.sight_range ?? 10, attack_range: m.attack_range ?? 2,
+      resistances: m.resistances || { fire:0, ice:0, bullet:0 },
+      geometry: { v:1, parts: (m.geometry?.parts || []).map(p => ({ ...p, id: uid() })) },
+      lore: m.lore || '',
+    })
+    setThumbnail(null); setTab('stats'); setExpandedPart(null); setSelectedPart(null)
+  }
+
   const deleteMonster = async (id) => {
     if (!confirm('Eliminare questo mostro?')) return
     await fetch(`/api/monsters/${id}`, { method:'DELETE', headers:{ Authorization:`Bearer ${token}` } })
@@ -157,11 +221,11 @@ export default function MonsterEditor() {
     await loadMonsters()
   }
 
-  const set     = (k, v) => setEditing(e => ({...e, [k]:v}))
-  const setRes  = (k, v) => setEditing(e => ({...e, resistances:{...e.resistances,[k]:v}}))
-  const setPart = (id, ch) => setEditing(e => ({...e, geometry:{...e.geometry, parts:e.geometry.parts.map(p => p.id===id?{...p,...ch}:p)}}))
-  const addPart = () => { const p=newPart(); setEditing(e=>({...e,geometry:{...e.geometry,parts:[...e.geometry.parts,p]}})); setExpandedPart(p.id); setSelectedPart(p.id) }
-  const delPart = (id) => { setEditing(e=>({...e,geometry:{...e.geometry,parts:e.geometry.parts.filter(p=>p.id!==id)}})); if(expandedPart===id) setExpandedPart(null); if(selectedPart===id) setSelectedPart(null) }
+  const set     = (k, v)   => { pushUndo(); setEditing(e => ({...e, [k]:v})) }
+  const setRes  = (k, v)   => { pushUndo(); setEditing(e => ({...e, resistances:{...e.resistances,[k]:v}})) }
+  const setPart = (id, ch) => { pushUndo(); setEditing(e => ({...e, geometry:{...e.geometry, parts:e.geometry.parts.map(p => p.id===id?{...p,...ch}:p)}})) }
+  const addPart = () => { const p=newPart(); pushUndo(); setEditing(e=>({...e,geometry:{...e.geometry,parts:[...e.geometry.parts,p]}})); setExpandedPart(p.id); setSelectedPart(p.id) }
+  const delPart = (id) => { pushUndo(); setEditing(e=>({...e,geometry:{...e.geometry,parts:e.geometry.parts.filter(p=>p.id!==id)}})); if(expandedPart===id) setExpandedPart(null); if(selectedPart===id) setSelectedPart(null) }
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', fontFamily:'Courier New, monospace',
@@ -191,7 +255,8 @@ export default function MonsterEditor() {
               </div>}
             {monsters.map(m =>
               <MonsterCard key={m.id} monster={m} selected={editing?.id===m.id}
-                onClick={()=>selectMonster(m)} onDelete={()=>deleteMonster(m.id)} />)}
+                onClick={()=>selectMonster(m)} onDelete={()=>deleteMonster(m.id)}
+                onDuplicate={()=>duplicateFrom(m)} />)}
           </div>
         </div>
 
@@ -208,7 +273,8 @@ export default function MonsterEditor() {
             <>
               <MonsterViewer
                 geometry={editing.geometry} onThumbnailCapture={setThumbnail}
-                selectedPartId={selectedPart} onPartSelect={handlePartSelect}
+                selectedPartId={selectedPart}
+                onPartSelect={tab === 'geometry' ? handlePartSelect : null}
                 onPartTransform={handlePartTransform}
                 transformMode={transformMode} transformSpace={transformSpace}
               />
@@ -271,41 +337,66 @@ export default function MonsterEditor() {
                       cursor:saving?'default':'pointer', transition:'background 0.15s' }}>
                     {saving ? '...' : (editing.id ? '↑ AGGIORNA' : '✓ SALVA')}
                   </button>
+                  {/* Duplicate */}
+                  <IconBtn onClick={duplicateMonster} title="Duplica mostro"
+                    icon="⧉" label="COPIA"
+                    base={{ bg:'transparent', border:C.borderMed, color:C.txtSub }}
+                    hover={{ bg:'#0d1a0d', border:'#336633', color:'#88cc88' }} />
+                  {/* Delete from DB */}
                   {editing.id && (
-                    <button onClick={()=>deleteMonster(editing.id)}
-                      style={{ background:'transparent', border:`1px solid ${C.redGhost}`,
-                        color:C.txtDim, fontFamily:'monospace', fontSize:13,
-                        padding:'7px 11px', cursor:'pointer', transition:'all 0.15s' }}
-                      onMouseEnter={e=>Object.assign(e.currentTarget.style,{borderColor:C.red,color:'#ff4400'})}
-                      onMouseLeave={e=>Object.assign(e.currentTarget.style,{borderColor:C.redGhost,color:C.txtDim})}>
-                      ×
-                    </button>
+                    <IconBtn onClick={()=>deleteMonster(editing.id)} title="Elimina dal database"
+                      icon="⊗" label="ELIMINA"
+                      base={{ bg:C.redGhost, border:C.redDim, color:'#cc4422' }}
+                      hover={{ bg:'#3a0000', border:C.red, color:'#ff5533' }} />
                   )}
-                  <button onClick={()=>setEditing(null)}
-                    style={{ background:'transparent', border:`1px solid ${C.border}`,
-                      color:C.txtGhost, fontFamily:'monospace', fontSize:13,
-                      padding:'7px 9px', cursor:'pointer', transition:'all 0.15s' }}
-                    onMouseEnter={e=>Object.assign(e.currentTarget.style,{borderColor:'#444',color:'#888'})}
-                    onMouseLeave={e=>Object.assign(e.currentTarget.style,{borderColor:C.border,color:C.txtGhost})}>
-                    ✕
-                  </button>
+                  {/* Close panel */}
+                  <IconBtn onClick={()=>setEditing(null)} title="Chiudi"
+                    icon="←" label="CHIUDI"
+                    base={{ bg:'transparent', border:'#2a2a2a', color:'#555' }}
+                    hover={{ bg:'#1a1a1a', border:'#666', color:'#aaa' }} />
+                </div>
+                {/* ── Undo / Redo buttons ── */}
+                <div style={{ display:'flex', gap:6, marginTop:6 }}>
+                  {[
+                    { fn: undo, enabled: histLen.u > 0, label:'⟲', title:`Annulla (Ctrl+Z) — ${histLen.u} step` },
+                    { fn: redo, enabled: histLen.r > 0, label:'⟳', title:`Ripristina (Ctrl+Y) — ${histLen.r} step` },
+                  ].map(({ fn, enabled, label, title }) => (
+                    <button key={label} onClick={fn} disabled={!enabled} title={title}
+                      style={{
+                        flex:1, background: enabled ? C.bgBtn : 'transparent',
+                        border: `1px solid ${enabled ? C.borderMed : C.border}`,
+                        color: enabled ? C.txtMain : C.txtGhost,
+                        fontFamily:'monospace', fontSize:15, padding:'4px 0',
+                        cursor: enabled ? 'pointer' : 'default', transition:'all 0.15s',
+                        opacity: enabled ? 1 : 0.35,
+                      }}
+                      onMouseEnter={e=>{ if(enabled) Object.assign(e.currentTarget.style,{borderColor:C.red,color:C.txtAccent}) }}
+                      onMouseLeave={e=>{ if(enabled) Object.assign(e.currentTarget.style,{borderColor:C.borderMed,color:C.txtMain}) }}>
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
               {/* ── Tab bar ── */}
               <div style={{ display:'flex', borderBottom:`1px solid ${C.border}`, flexShrink:0 }}>
-                {[['stats','STATS'],['geometry','GEO'],['json','JSON']].map(([t,l]) => (
-                  <div key={t} onClick={()=>setTab(t)}
-                    style={{ flex:1, padding:'8px 0', fontSize:10, letterSpacing:2, cursor:'pointer',
-                      textAlign:'center', transition:'all 0.15s',
-                      color: tab===t ? C.txtAccent : C.txtDim,
-                      borderBottom: tab===t ? `2px solid ${C.red}` : '2px solid transparent',
-                      background: tab===t ? C.bgTabAct : 'transparent' }}
-                    onMouseEnter={e=>{ if(tab!==t) e.currentTarget.style.color=C.txtSub }}
-                    onMouseLeave={e=>{ if(tab!==t) e.currentTarget.style.color=C.txtDim }}>
-                    {l}
-                  </div>
-                ))}
+                {[['stats','≡','STATS'],['geometry','⬡','GEO'],['json','{}','JSON']].map(([t,icon,l]) => {
+                  const active = tab === t
+                  return (
+                    <div key={t} onClick={()=>{ setTab(t); if(t!=='geometry'){ setSelectedPart(null); setExpandedPart(null) } }}
+                      style={{ flex:1, padding:'8px 0', cursor:'pointer', textAlign:'center',
+                        transition:'all 0.15s', display:'flex', flexDirection:'column',
+                        alignItems:'center', gap:3,
+                        color: active ? C.txtAccent : C.txtDim,
+                        borderBottom: active ? `2px solid ${C.red}` : '2px solid transparent',
+                        background: active ? C.bgTabAct : 'transparent' }}
+                      onMouseEnter={e=>{ if(!active){ e.currentTarget.style.color=C.txtSub; e.currentTarget.style.background='#0d0703' } }}
+                      onMouseLeave={e=>{ if(!active){ e.currentTarget.style.color=C.txtDim; e.currentTarget.style.background='transparent' } }}>
+                      <span style={{ fontSize:17, lineHeight:1 }}>{icon}</span>
+                      <span style={{ fontSize:8, letterSpacing:2 }}>{l}</span>
+                    </div>
+                  )
+                })}
               </div>
 
               {/* ── Tab content ── */}
@@ -325,8 +416,24 @@ export default function MonsterEditor() {
   )
 }
 
+// ── Icon button (icon + small label stacked) ─────────────────────────────────
+function IconBtn({ onClick, title, icon, label, base, hover }) {
+  return (
+    <button onClick={onClick} title={title}
+      style={{ background:base.bg, border:`1px solid ${base.border}`, color:base.color,
+        fontFamily:'monospace', cursor:'pointer', transition:'all 0.15s',
+        display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+        padding:'5px 10px', gap:2, minWidth:48 }}
+      onMouseEnter={e=>Object.assign(e.currentTarget.style,{background:hover.bg,borderColor:hover.border,color:hover.color})}
+      onMouseLeave={e=>Object.assign(e.currentTarget.style,{background:base.bg,borderColor:base.border,color:base.color})}>
+      <span style={{ fontSize:16, lineHeight:1 }}>{icon}</span>
+      <span style={{ fontSize:8, letterSpacing:1 }}>{label}</span>
+    </button>
+  )
+}
+
 // ── Monster card ──────────────────────────────────────────────────────────────
-function MonsterCard({ monster, selected, onClick, onDelete }) {
+function MonsterCard({ monster, selected, onClick, onDelete, onDuplicate }) {
   return (
     <div className="me-card" onClick={onClick}
       style={{ border:`1px solid ${selected?C.red:C.border}`, background:selected?C.bgCardSel:C.bgCard,
@@ -352,11 +459,25 @@ function MonsterCard({ monster, selected, onClick, onDelete }) {
         </div>
         <div style={{ color:C.txtGhost, fontSize:9, marginTop:1, letterSpacing:1 }}>{monster.behavior}</div>
       </div>
-      {/* Delete */}
-      <button className="me-btn-icon" onClick={e=>{e.stopPropagation();onDelete()}}
-        style={{ position:'absolute', top:3, right:4, background:'transparent', border:'none',
-          color:C.txtGhost, cursor:'pointer', fontSize:14, lineHeight:1, padding:'0 3px',
-          opacity:0, transition:'opacity 0.15s, color 0.15s' }}>×</button>
+      {/* Hover actions */}
+      <div className="me-card-actions"
+        style={{ position:'absolute', top:0, right:0, bottom:0, display:'flex', flexDirection:'column',
+          opacity:0, transition:'opacity 0.15s' }}>
+        <button title="Duplica" onClick={e=>{e.stopPropagation();onDuplicate()}}
+          style={{ flex:1, background:'#0d1a0d', border:'none', borderLeft:`1px solid #224422`,
+            color:'#66aa66', cursor:'pointer', fontSize:13, padding:'0 8px', transition:'all 0.1s' }}
+          onMouseEnter={e=>Object.assign(e.currentTarget.style,{background:'#1a3a1a',color:'#88dd88'})}
+          onMouseLeave={e=>Object.assign(e.currentTarget.style,{background:'#0d1a0d',color:'#66aa66'})}>
+          ⧉
+        </button>
+        <button title="Elimina" onClick={e=>{e.stopPropagation();onDelete()}}
+          style={{ flex:1, background:C.redGhost, border:'none', borderLeft:`1px solid ${C.redDim}`,
+            borderTop:`1px solid #1a0000`, color:'#aa3322', cursor:'pointer', fontSize:13, padding:'0 8px', transition:'all 0.1s' }}
+          onMouseEnter={e=>Object.assign(e.currentTarget.style,{background:'#3a0000',color:'#ff4422'})}
+          onMouseLeave={e=>Object.assign(e.currentTarget.style,{background:C.redGhost,color:'#aa3322'})}>
+          ⊗
+        </button>
+      </div>
     </div>
   )
 }
