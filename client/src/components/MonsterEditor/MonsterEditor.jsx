@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import PageHeader from '../PageHeader.jsx'
 import MonsterViewer from './MonsterViewer.jsx'
+import { monsterSfx, randomMonsterSounds, randomAlertSound, randomMovementSound,
+         MOVEMENT_CATEGORIES, MOOD_COLORS } from '../../utils/monsterSfx.js'
 
 // ── Inject spinner + scrollbar styles once ────────────────────────────────────
 const STYLE_ID = 'monster-editor-styles'
@@ -79,6 +81,7 @@ const DEFAULT_STATE = () => ({
   resistances: { fire:0, ice:0, bullet:0 },
   geometry: { v:1, parts: DEFAULT_GEOMETRY.parts.map(p => ({...p})) },
   lore: '',
+  sounds: randomMonsterSounds('Nuovo Mostro'),
 })
 
 const uid   = () => Math.random().toString(36).slice(2,8)
@@ -100,35 +103,48 @@ export default function MonsterEditor() {
   const [transformSpace, setTransformSpace] = useState('world')
 
   // ── Undo / Redo ───────────────────────────────────────────────────────────────
-  const undoStack  = useRef([])
-  const redoStack  = useRef([])
-  const editingRef = useRef(null)
+  // curRef è aggiornato SINCRONICAMENTE ad ogni mutazione (non aspetta il render)
+  // così pushUndo cattura sempre lo stato reale corrente, anche in chiamate rapide consecutive
+  const undoStack = useRef([])
+  const redoStack = useRef([])
+  const curRef    = useRef(null)
   const [histLen, setHistLen] = useState({ u:0, r:0 })
-  useEffect(() => { editingRef.current = editing }, [editing])
 
-  const pushUndo = useCallback(() => {
-    if (!editingRef.current) return
-    undoStack.current = [...undoStack.current.slice(-49), editingRef.current]
+  // ── Dirty tracking ────────────────────────────────────────────────────────────
+  // savedRef = snapshot of editing state at last successful DB save
+  // savedThumbRef = thumbnail at last save
+  const savedRef      = useRef(null)
+  const savedThumbRef = useRef(null)
+
+  // Aggiorna stato e curRef insieme — usato da tutti i setter
+  const _commit = (next) => { curRef.current = next; setEditing(next) }
+
+  const _pushUndo = () => {
+    if (!curRef.current) return
+    undoStack.current = [...undoStack.current.slice(-49), curRef.current]
     redoStack.current = []
     setHistLen({ u: undoStack.current.length, r: 0 })
-  }, [])
+  }
 
   const undo = useCallback(() => {
     if (!undoStack.current.length) return
-    redoStack.current = editingRef.current
-      ? [editingRef.current, ...redoStack.current.slice(0, 49)]
-      : redoStack.current
-    setEditing(undoStack.current[undoStack.current.length - 1])
+    if (curRef.current)
+      redoStack.current = [curRef.current, ...redoStack.current.slice(0, 49)]
+    const prev = undoStack.current[undoStack.current.length - 1]
     undoStack.current = undoStack.current.slice(0, -1)
+    curRef.current = prev
+    setEditing(prev)
     setHistLen({ u: undoStack.current.length, r: redoStack.current.length })
   }, [])
 
   const redo = useCallback(() => {
     if (!redoStack.current.length) return
-    if (editingRef.current)
-      undoStack.current = [...undoStack.current.slice(0, 49), editingRef.current]
-    setEditing(redoStack.current[0])
+    if (curRef.current)
+      undoStack.current = [...undoStack.current.slice(-49), curRef.current]
+    const next = redoStack.current[0]
     redoStack.current = redoStack.current.slice(1)
+    curRef.current = next
+    setEditing(next)
     setHistLen({ u: undoStack.current.length, r: redoStack.current.length })
   }, [])
 
@@ -153,16 +169,21 @@ export default function MonsterEditor() {
 
   const selectMonster = (m) => {
     undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
-    setEditing({ id:m.id, name:m.name, health:m.health, speed:m.speed, damage:m.damage,
+    const s = { id:m.id, name:m.name, health:m.health, speed:m.speed, damage:m.damage,
       behavior:m.behavior, sight_range:m.sight_range??10, attack_range:m.attack_range??2,
       resistances:m.resistances||{fire:0,ice:0,bullet:0},
-      geometry:m.geometry||{v:1,parts:[]}, lore:m.lore||'' })
+      geometry:m.geometry||{v:1,parts:[]}, lore:m.lore||'',
+      sounds:m.sounds||randomMonsterSounds(m.name||'monster') }
+    curRef.current = s; savedRef.current = s; setEditing(s)
+    savedThumbRef.current = m.thumbnail||null
     setThumbnail(m.thumbnail||null); setTab('stats'); setExpandedPart(null); setSelectedPart(null)
   }
 
   const newMonster = () => {
     undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
-    setEditing(DEFAULT_STATE()); setThumbnail(null); setTab('stats'); setExpandedPart(null); setSelectedPart(null)
+    const s = DEFAULT_STATE(); curRef.current = s; savedRef.current = null; setEditing(s)
+    savedThumbRef.current = null
+    setThumbnail(null); setTab('stats'); setExpandedPart(null); setSelectedPart(null)
   }
 
   const handlePartSelect = useCallback((partId) => {
@@ -177,6 +198,8 @@ export default function MonsterEditor() {
   const saveMonster = async () => {
     if (!editing || saving) return
     setSaving(true)
+    const snapEditing = curRef.current
+    const snapThumb   = thumbnail
     try {
       const url = editing.id ? `/api/monsters/${editing.id}` : '/api/monsters'
       const r = await fetch(url, {
@@ -185,11 +208,20 @@ export default function MonsterEditor() {
         body: JSON.stringify({ name:editing.name, health:editing.health, speed:editing.speed,
           damage:editing.damage, behavior:editing.behavior, sight_range:editing.sight_range,
           attack_range:editing.attack_range, resistances:editing.resistances,
-          geometry:editing.geometry, thumbnail, lore:editing.lore }),
+          geometry:editing.geometry, thumbnail, lore:editing.lore,
+          sounds:editing.sounds }),
       })
       if (r.ok) {
         const data = await r.json()
-        if (!editing.id && data.id) setEditing(e => ({...e, id:data.id}))
+        if (!editing.id && data.id) {
+          const updated = { ...snapEditing, id: data.id }
+          savedRef.current = updated
+          curRef.current   = updated
+          setEditing(updated)
+        } else {
+          savedRef.current = snapEditing
+        }
+        savedThumbRef.current = snapThumb
         await loadMonsters()
       }
     } finally { setSaving(false) }
@@ -202,7 +234,7 @@ export default function MonsterEditor() {
 
   const duplicateFrom = (m) => {
     undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
-    setEditing({
+    const s = {
       id: null,
       name: m.name + ' (copia)',
       health: m.health, speed: m.speed, damage: m.damage,
@@ -210,7 +242,10 @@ export default function MonsterEditor() {
       resistances: m.resistances || { fire:0, ice:0, bullet:0 },
       geometry: { v:1, parts: (m.geometry?.parts || []).map(p => ({ ...p, id: uid() })) },
       lore: m.lore || '',
-    })
+      sounds: m.sounds ? JSON.parse(JSON.stringify(m.sounds)) : randomMonsterSounds(m.name||'monster'),
+    }
+    curRef.current = s; savedRef.current = null; setEditing(s)
+    savedThumbRef.current = null
     setThumbnail(null); setTab('stats'); setExpandedPart(null); setSelectedPart(null)
   }
 
@@ -221,11 +256,21 @@ export default function MonsterEditor() {
     await loadMonsters()
   }
 
-  const set     = (k, v)   => { pushUndo(); setEditing(e => ({...e, [k]:v})) }
-  const setRes  = (k, v)   => { pushUndo(); setEditing(e => ({...e, resistances:{...e.resistances,[k]:v}})) }
-  const setPart = (id, ch) => { pushUndo(); setEditing(e => ({...e, geometry:{...e.geometry, parts:e.geometry.parts.map(p => p.id===id?{...p,...ch}:p)}})) }
-  const addPart = () => { const p=newPart(); pushUndo(); setEditing(e=>({...e,geometry:{...e.geometry,parts:[...e.geometry.parts,p]}})); setExpandedPart(p.id); setSelectedPart(p.id) }
-  const delPart = (id) => { pushUndo(); setEditing(e=>({...e,geometry:{...e.geometry,parts:e.geometry.parts.filter(p=>p.id!==id)}})); if(expandedPart===id) setExpandedPart(null); if(selectedPart===id) setSelectedPart(null) }
+  const setSounds   = (ch)       => { _pushUndo(); _commit({...curRef.current, sounds:{...curRef.current.sounds,...ch}}) }
+  const _partUpdate = (id, ch) => ({...curRef.current, geometry:{...curRef.current.geometry, parts:curRef.current.geometry.parts.map(p=>p.id===id?{...p,...ch}:p)}})
+
+  const set         = (k, v)   => { _pushUndo(); _commit({...curRef.current, [k]:v}) }
+  const setRes      = (k, v)   => { _pushUndo(); _commit({...curRef.current, resistances:{...curRef.current.resistances,[k]:v}}) }
+  const setPart     = (id, ch) => { _pushUndo(); _commit(_partUpdate(id, ch)) }
+  const setPartLive = (id, ch) => {              _commit(_partUpdate(id, ch)) }
+  const addPart = () => { const p=newPart(); _pushUndo(); _commit({...curRef.current,geometry:{...curRef.current.geometry,parts:[...curRef.current.geometry.parts,p]}}); setExpandedPart(p.id); setSelectedPart(p.id) }
+  const delPart = (id) => { _pushUndo(); _commit({...curRef.current,geometry:{...curRef.current.geometry,parts:curRef.current.geometry.parts.filter(p=>p.id!==id)}}); if(expandedPart===id) setExpandedPart(null); if(selectedPart===id) setSelectedPart(null) }
+
+  // true when editing state differs from last DB save (or monster has never been saved)
+  const isDirty = !editing ? false
+    : editing.id === null
+      ? true
+      : JSON.stringify(editing) !== JSON.stringify(savedRef.current) || thumbnail !== savedThumbRef.current
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', fontFamily:'Courier New, monospace',
@@ -331,12 +376,14 @@ export default function MonsterEditor() {
                     fontFamily:'monospace', fontSize:13, padding:'6px 9px',
                     outline:'none', letterSpacing:1, marginBottom:8 }} />
                 <div style={{ display:'flex', gap:6 }}>
+                  {(isDirty || saving) && (
                   <button onClick={saveMonster} disabled={saving}
                     style={{ flex:1, background:saving?'#661100':'#aa1c00', border:'none', color:'#fff',
                       fontFamily:'monospace', fontSize:11, letterSpacing:2, padding:'7px 0',
                       cursor:saving?'default':'pointer', transition:'background 0.15s' }}>
                     {saving ? '...' : (editing.id ? '↑ AGGIORNA' : '✓ SALVA')}
                   </button>
+                  )}
                   {/* Duplicate */}
                   <IconBtn onClick={duplicateMonster} title="Duplica mostro"
                     icon="⧉" label="COPIA"
@@ -380,7 +427,7 @@ export default function MonsterEditor() {
 
               {/* ── Tab bar ── */}
               <div style={{ display:'flex', borderBottom:`1px solid ${C.border}`, flexShrink:0 }}>
-                {[['stats','≡','STATS'],['geometry','⬡','GEO'],['json','{}','JSON']].map(([t,icon,l]) => {
+                {[['stats','≡','STATS'],['geometry','⬡','GEO'],['sfx','♪','SFX'],['json','{}','JSON']].map(([t,icon,l]) => {
                   const active = tab === t
                   return (
                     <div key={t} onClick={()=>{ setTab(t); if(t!=='geometry'){ setSelectedPart(null); setExpandedPart(null) } }}
@@ -405,7 +452,8 @@ export default function MonsterEditor() {
                 {tab==='geometry' && <GeometryTab parts={editing.geometry?.parts||[]}
                   expandedPart={expandedPart} setExpandedPart={setExpandedPart}
                   selectedPart={selectedPart} setSelectedPart={setSelectedPart}
-                  onAdd={addPart} onDelete={delPart} onUpdate={setPart} />}
+                  onAdd={addPart} onDelete={delPart} onUpdate={setPart} onLiveUpdate={setPartLive} />}
+                {tab==='sfx'      && <SfxTab sounds={editing.sounds} setSounds={setSounds} monsterName={editing.name} />}
                 {tab==='json'     && <JSONTab     editing={editing} />}
               </div>
             </>
@@ -530,7 +578,7 @@ function Slider({ label, value, min, max, color, unit, onChange }) {
 }
 
 // ── Geometry tab ──────────────────────────────────────────────────────────────
-function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSelectedPart, onAdd, onDelete, onUpdate }) {
+function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSelectedPart, onAdd, onDelete, onUpdate, onLiveUpdate }) {
   return (
     <div>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
@@ -554,13 +602,14 @@ function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSe
             setSelectedPart(part.id)
           }}
           onUpdate={ch=>onUpdate(part.id,ch)}
+          onLiveUpdate={ch=>onLiveUpdate(part.id,ch)}
           onDelete={()=>onDelete(part.id)} />
       ))}
     </div>
   )
 }
 
-function PartRow({ part, expanded, selected, onToggle, onUpdate, onDelete }) {
+function PartRow({ part, expanded, selected, onToggle, onUpdate, onLiveUpdate, onDelete }) {
   const borderColor = selected ? C.red : expanded ? C.borderMed : C.border
   const bg = selected ? '#200a00' : expanded ? '#150900' : '#0d0603'
   return (
@@ -589,14 +638,14 @@ function PartRow({ part, expanded, selected, onToggle, onUpdate, onDelete }) {
       {/* Expanded editor */}
       {expanded && (
         <div style={{ padding:'12px 12px 14px', borderTop:`1px solid ${C.border}` }}>
-          <PartEditor part={part} onChange={onUpdate} />
+          <PartEditor part={part} onChange={onUpdate} onLive={onLiveUpdate} />
         </div>
       )}
     </div>
   )
 }
 
-function PartEditor({ part, onChange }) {
+function PartEditor({ part, onChange, onLive }) {
   const Num = ({ label, k, step=0.05 }) => (
     <label style={{ display:'flex', flexDirection:'column', gap:4 }}>
       <span style={{ color:C.txtSub, fontSize:10, letterSpacing:1 }}>{label}</span>
@@ -639,7 +688,9 @@ function PartEditor({ part, onChange }) {
         </label>
         <label style={{ display:'flex', flexDirection:'column', gap:4 }}>
           <span style={{ color:C.txtSub, fontSize:10, letterSpacing:1 }}>COLORE</span>
-          <input type="color" value={part.color||'#cc2200'} onChange={e=>onChange({color:e.target.value})}
+          <input type="color" value={part.color||'#cc2200'}
+            onInput={e => onLive?.({color:e.target.value})}
+            onChange={e => onChange({color:e.target.value})}
             style={{ width:44, height:34, border:`1px solid ${C.borderMed}`,
               padding:2, cursor:'pointer', background:C.bgInput }} />
         </label>
@@ -677,6 +728,7 @@ function JSONTab({ editing }) {
       behavior:editing.behavior, sight_range:editing.sight_range, attack_range:editing.attack_range },
     resistances:editing.resistances,
     geometry:editing.geometry,
+    sounds:editing.sounds,
     lore:editing.lore,
   }
   return (
@@ -684,6 +736,244 @@ function JSONTab({ editing }) {
       wordBreak:'break-all', margin:0, lineHeight:1.8 }}>
       {JSON.stringify(json, null, 2)}
     </pre>
+  )
+}
+
+// ── SFX tab ───────────────────────────────────────────────────────────────────
+const WAVE_LABEL   = { saw:'sega', square:'quadra', tri:'triangolo', sine:'sinusoide' }
+const FILTER_LABEL = { lp:'LP', hp:'HP', bp:'BP' }
+const NOISE_LABEL  = { brown:'marrone', pink:'rosa', white:'bianco' }
+
+function layerDesc(l) {
+  if (l.src === 'osc') {
+    const hz   = Math.round(l.freq || 0)
+    const wave = WAVE_LABEL[l.wave] || l.wave || '?'
+    const flt  = l.filter?.type && l.filter.type !== 'off'
+      ? `  ${FILTER_LABEL[l.filter.type] || l.filter.type} ${Math.round(l.filter.freq || 0)}Hz` : ''
+    const lfo  = l.lfo ? `  mod:${l.lfo.target} ${+(l.lfo.rate||0).toFixed(1)}Hz` : ''
+    const swp  = l.freqSweep ? `  sweep ${Math.round(l.freqSweep.from)}→${Math.round(l.freqSweep.to)}Hz` : ''
+    return `osc ${wave} ${hz}Hz${swp}${flt}${lfo}`
+  }
+  const nc  = NOISE_LABEL[l.noiseColor] || l.noiseColor || '?'
+  const flt = l.filter?.type && l.filter.type !== 'off'
+    ? `  ${FILTER_LABEL[l.filter.type] || l.filter.type} ${Math.round(l.filter.freq || 0)}Hz` : ''
+  return `rumore ${nc}${flt}`
+}
+
+function sfxRng() {
+  let s = (Math.random() * 0xFFFFFFFF) | 0
+  return () => { s = (s * 1664525 + 1013904223) | 0; return (s >>> 0) / 0xFFFFFFFF }
+}
+
+function SfxTab({ sounds, setSounds }) {
+  const alertHandleRef = useRef(null)
+  const loopHandleRef  = useRef(null)
+  const [alertPlaying, setAlertPlaying] = useState(false)
+  const [loopPlaying,  setLoopPlaying]  = useState(false)
+
+  // Cleanup on unmount or when sounds change
+  useEffect(() => () => {
+    alertHandleRef.current?.stop(); loopHandleRef.current?.stop()
+  }, [])
+
+  if (!sounds) return null
+
+  const regenAlert = () => {
+    alertHandleRef.current?.stop(); alertHandleRef.current = null; setAlertPlaying(false)
+    setSounds({ alert: randomAlertSound(sfxRng()) })
+  }
+  const regenMovement = (cat) => {
+    loopHandleRef.current?.stop(); loopHandleRef.current = null; setLoopPlaying(false)
+    setSounds({ movement: randomMovementSound(sfxRng(), cat || sounds.movement?.category) })
+  }
+  const setCategory = (cat) => {
+    loopHandleRef.current?.stop(); loopHandleRef.current = null; setLoopPlaying(false)
+    setSounds({ movement: randomMovementSound(sfxRng(), cat) })
+  }
+
+  const playAlert = () => {
+    alertHandleRef.current?.stop(); alertHandleRef.current = null
+    const handle = monsterSfx.playAlert(sounds.alert)
+    alertHandleRef.current = handle
+    setAlertPlaying(true)
+    setTimeout(() => { alertHandleRef.current = null; setAlertPlaying(false) },
+      ((sounds.alert?.dur || 1.5) * 1000) + 300)
+  }
+  const stopAlert = () => {
+    alertHandleRef.current?.stop(); alertHandleRef.current = null; setAlertPlaying(false)
+  }
+
+  const toggleLoop = () => {
+    if (loopPlaying) {
+      loopHandleRef.current?.stop(); loopHandleRef.current = null; setLoopPlaying(false)
+    } else {
+      const handle = monsterSfx.startMovementLoop(sounds.movement)
+      loopHandleRef.current = handle; setLoopPlaying(true)
+    }
+  }
+  const alertMood    = sounds.alert?.mood || 'aggressive'
+  const movCat       = sounds.movement?.category || 'organic_walk'
+  const moodColor    = MOOD_COLORS[alertMood] || C.txtAccent
+  const isContinuous = sounds.movement?.continuous !== false  // fly/slide = true, walk = false
+  const movBpm    = sounds.movement?.bpm
+
+  const setAlertMood = (mood) => {
+    setSounds({ alert: { ...sounds.alert, mood } })
+  }
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:18 }}>
+
+      {/* ── ALERT ── */}
+      <div>
+        <SectionLabel>ALERT — ATTIVAZIONE</SectionLabel>
+        <div style={{ background:'#120600', border:`1px solid ${C.borderMed}`, padding:12, display:'flex', flexDirection:'column', gap:10 }}>
+
+          {/* Mood selector */}
+          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+            <span style={{ color:C.txtSub, fontSize:9, letterSpacing:2 }}>CARATTERE — salvato nel JSON</span>
+            <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+              {Object.entries(MOOD_COLORS).map(([mood, col]) => {
+                const active = alertMood === mood
+                return (
+                  <button key={mood} onClick={() => setAlertMood(mood)}
+                    style={{ background: active ? col+'33' : 'transparent',
+                      border: `1px solid ${active ? col : C.border}`,
+                      color: active ? col : C.txtGhost,
+                      fontFamily:'monospace', fontSize:9, letterSpacing:1,
+                      padding:'3px 8px', cursor:'pointer', transition:'all 0.12s',
+                      fontWeight: active ? 'bold' : 'normal' }}
+                    onMouseEnter={e=>{ if(!active) Object.assign(e.currentTarget.style,{borderColor:col,color:col}) }}
+                    onMouseLeave={e=>{ if(!active) Object.assign(e.currentTarget.style,{borderColor:C.border,color:C.txtGhost}) }}>
+                    {mood.toUpperCase()}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Params row */}
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <span style={{ color:C.txtDim, fontSize:9 }}>
+              {((sounds.alert?.intensity||0)*100).toFixed(0)}% INT
+            </span>
+            <span style={{ color:C.txtGhost, fontSize:9 }}>{(sounds.alert?.dur||0).toFixed(1)}s</span>
+            {sounds.alert?.crush > 0.02 && <span style={{ color:'#aa6622', fontSize:9, border:'1px solid #442200', padding:'1px 5px' }}>CRUSH</span>}
+            {sounds.alert?.room  > 0.05 && <span style={{ color:'#4466aa', fontSize:9, border:'1px solid #223355', padding:'1px 5px' }}>ROOM</span>}
+          </div>
+
+          {/* Layers */}
+          <div style={{ display:'flex', flexDirection:'column', gap:2, paddingLeft:4,
+            borderLeft:`2px solid ${C.border}` }}>
+            {(sounds.alert?.layers||[]).map((l, i) => (
+              <div key={i} style={{ fontSize:9, color:C.txtGhost, fontFamily:'monospace' }}>
+                {i+1}. {layerDesc(l)}
+              </div>
+            ))}
+          </div>
+
+          {/* Buttons */}
+          <div style={{ display:'flex', gap:7 }}>
+            {alertPlaying
+              ? <SfxBtn onClick={stopAlert} stop>■ STOP</SfxBtn>
+              : <SfxBtn onClick={playAlert}>► ASCOLTA</SfxBtn>}
+            <SfxBtn onClick={regenAlert} accent>↺ RIGENERA</SfxBtn>
+          </div>
+        </div>
+      </div>
+
+      {/* ── MOVIMENTO ── */}
+      <div>
+        <SectionLabel>MOVIMENTO</SectionLabel>
+        <div style={{ background:'#120600', border:`1px solid ${C.borderMed}`, padding:12, display:'flex', flexDirection:'column', gap:10 }}>
+
+          {/* Category */}
+          <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+            <span style={{ color:C.txtSub, fontSize:9, letterSpacing:2 }}>TIPO — salvato nel JSON</span>
+            <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+              {MOVEMENT_CATEGORIES.map(({ value, label, icon }) => {
+                const active = movCat === value
+                return (
+                  <button key={value} onClick={() => setCategory(value)}
+                    style={{ background: active ? C.redGhost : 'transparent',
+                      border: `1px solid ${active ? C.red : C.border}`,
+                      color: active ? C.txtAccent : C.txtDim,
+                      fontFamily:'monospace', fontSize:9, letterSpacing:1,
+                      padding:'4px 9px', cursor:'pointer', transition:'all 0.12s',
+                      fontWeight: active ? 'bold' : 'normal' }}
+                    onMouseEnter={e=>{ if(!active) Object.assign(e.currentTarget.style,{borderColor:C.borderMed,color:C.txtSub}) }}
+                    onMouseLeave={e=>{ if(!active) Object.assign(e.currentTarget.style,{borderColor:C.border,color:C.txtDim}) }}>
+                    {icon} {label.toUpperCase()}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Mode badge + BPM + rhythm info */}
+          <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+            {isContinuous
+              ? <span style={{ fontSize:9, letterSpacing:2, padding:'2px 8px',
+                  background:'#002244', border:'1px solid #224488', color:'#4488cc' }}>
+                  ∞ TONO CONTINUO
+                </span>
+              : <>
+                  <span style={{ fontSize:9, letterSpacing:2, padding:'2px 8px',
+                    background:'#1a0800', border:`1px solid ${C.redDim}`, color:C.txtMain }}>
+                    ♩ LOOP RITMICO
+                  </span>
+                  {movBpm && (
+                    <span style={{ fontSize:9, letterSpacing:1, padding:'2px 8px',
+                      background:'#100500', border:`1px solid ${C.border}`, color:C.txtAccent, fontFamily:'monospace' }}>
+                      {movBpm|0} BPM
+                    </span>
+                  )}
+                  {sounds.movement?.rhythm?.pattern && (
+                    <span style={{ color:C.txtGhost, fontSize:10, fontFamily:'monospace' }}>
+                      [{(sounds.movement.rhythm.pattern).map(v=>v===0?'·':v===1?'█':'▄').join('')}]
+                    </span>
+                  )}
+                </>
+            }
+          </div>
+
+          {/* Layers */}
+          <div style={{ display:'flex', flexDirection:'column', gap:2, paddingLeft:4,
+            borderLeft:`2px solid ${C.border}` }}>
+            {(sounds.movement?.layers||[]).map((l, i) => (
+              <div key={i} style={{ fontSize:9, color:C.txtGhost, fontFamily:'monospace' }}>
+                {i+1}. {layerDesc(l)}
+              </div>
+            ))}
+          </div>
+
+          {/* Buttons — tutti i movimenti sono loop */}
+          <div style={{ display:'flex', gap:7 }}>
+            <SfxBtn onClick={toggleLoop} stop={loopPlaying}>
+              {loopPlaying ? '■ STOP LOOP' : '► ASCOLTA LOOP'}
+            </SfxBtn>
+            <SfxBtn onClick={() => regenMovement()} accent>↺ RIGENERA</SfxBtn>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  )
+}
+
+function SfxBtn({ onClick, children, accent, stop: isStop }) {
+  const bg  = isStop ? '#220000' : accent ? C.redGhost : 'transparent'
+  const bdr = isStop ? C.red     : accent ? C.redDim   : C.borderMed
+  const col = isStop ? '#ff4444' : accent ? C.txtAccent : C.txtSub
+  return (
+    <button onClick={onClick}
+      style={{ background:bg, border:`1px solid ${bdr}`, color:col,
+        fontFamily:'monospace', fontSize:10, letterSpacing:2,
+        padding:'5px 12px', cursor:'pointer', transition:'all 0.12s', flex:1 }}
+      onMouseEnter={e=>Object.assign(e.currentTarget.style,{borderColor:C.red,color:C.txtAccent,background:C.redGhost})}
+      onMouseLeave={e=>Object.assign(e.currentTarget.style,{borderColor:bdr,color:col,background:bg})}>
+      {children}
+    </button>
   )
 }
 

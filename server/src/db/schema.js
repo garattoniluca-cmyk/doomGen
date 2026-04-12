@@ -78,6 +78,7 @@ export async function initDB() {
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS sight_range  INT          DEFAULT 10`)
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS attack_range INT          DEFAULT 2`)
     // Soft-delete: active flag on all content tables
+    await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS sounds JSON DEFAULT NULL`)
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS active TINYINT NOT NULL DEFAULT 1`)
     await conn.query(`ALTER TABLE surfaces ADD COLUMN IF NOT EXISTS active TINYINT NOT NULL DEFAULT 1`)
     await conn.query(`ALTER TABLE levels   ADD COLUMN IF NOT EXISTS active TINYINT NOT NULL DEFAULT 1`)
