@@ -438,6 +438,50 @@ const TEMPLATES = [
     },
   },
 
+  // ── 11. Cacodemon ──────────────────────────────────────────────────────────
+  {
+    id: 'cacodemon',
+    name: 'Cacodemon',
+    description: 'Sfera volante rossa con un grande occhio e mascella piena di denti metallici',
+    move_type: 'fly', speed: 3, rotate_speed: 120, hover_height: 2.0,
+    sight_range: 20, fov_angle: 120, fov_angle_v: 90,
+    health: 400, hp_regen: 0, hp_regen_rate: 0,
+    attack_type: 'ranged', attack_range: 2, damage: 20, melee_rate: 1.0,
+    ranged_range: 20, ranged_damage: 20, ranged_rate: 0.6,
+    geometry: {
+      v: 1,
+      anchors: {
+        eye:      { x: 0,    y: 1.05, z: 0.75 },
+        look_dir: { x: 0,    y: 0,    z: 1    },
+        fire:     { x: 0,    y: 0.82, z: 0.88, invisible_in_game: true },
+      },
+      parts: [
+        { id:'p01', label:'Corpo',         shape:'sphere',   w:0,    h:0,    d:0,    r:0.85, x: 0,     y:0.85, z: 0,    rx:  0, ry:0, rz:  0, color:'#cc2020' },
+        { id:'p02', label:'Occhio Bianco', shape:'sphere',   w:0,    h:0,    d:0,    r:0.20, x: 0,     y:1.05, z: 0.74, rx:  0, ry:0, rz:  0, color:'#d8d8d0' },
+        { id:'p03', label:'Pupilla',       shape:'sphere',   w:0,    h:0,    d:0,    r:0.10, x: 0,     y:1.05, z: 0.83, rx:  0, ry:0, rz:  0, color:'#22cc44' },
+        { id:'p04', label:'Mascella Sup.', shape:'box',      w:0.78, h:0.16, d:0.28, r:0,    x: 0,     y:0.61, z: 0.68, rx:  5, ry:0, rz:  0, color:'#aa1515' },
+        { id:'p05', label:'Mascella Inf.', shape:'box',      w:0.72, h:0.14, d:0.24, r:0,    x: 0,     y:0.38, z: 0.65, rx: -5, ry:0, rz:  0, color:'#aa1515' },
+        { id:'p06', label:'Gengiva Sup.',  shape:'box',      w:0.56, h:0.07, d:0.16, r:0,    x: 0,     y:0.57, z: 0.74, rx:  0, ry:0, rz:  0, color:'#1155cc' },
+        { id:'p07', label:'Gengiva Inf.',  shape:'box',      w:0.50, h:0.07, d:0.14, r:0,    x: 0,     y:0.43, z: 0.72, rx:  0, ry:0, rz:  0, color:'#0044aa' },
+        { id:'p08', label:'Dente S1',      shape:'cone',     w:0,    h:0.16, d:0,    r:0.05, x:-0.28,  y:0.55, z: 0.80, rx:180, ry:0, rz:  0, color:'#aaaaaa' },
+        { id:'p09', label:'Dente S2',      shape:'cone',     w:0,    h:0.16, d:0,    r:0.05, x:-0.13,  y:0.55, z: 0.83, rx:180, ry:0, rz:  0, color:'#aaaaaa' },
+        { id:'p10', label:'Dente S3',      shape:'cone',     w:0,    h:0.17, d:0,    r:0.05, x: 0,     y:0.55, z: 0.84, rx:180, ry:0, rz:  0, color:'#aaaaaa' },
+        { id:'p11', label:'Dente S4',      shape:'cone',     w:0,    h:0.16, d:0,    r:0.05, x: 0.13,  y:0.55, z: 0.83, rx:180, ry:0, rz:  0, color:'#aaaaaa' },
+        { id:'p12', label:'Dente S5',      shape:'cone',     w:0,    h:0.16, d:0,    r:0.05, x: 0.28,  y:0.55, z: 0.80, rx:180, ry:0, rz:  0, color:'#aaaaaa' },
+        { id:'p13', label:'Dente I1',      shape:'cone',     w:0,    h:0.13, d:0,    r:0.04, x:-0.22,  y:0.44, z: 0.80, rx:  0, ry:0, rz:  0, color:'#999999' },
+        { id:'p14', label:'Dente I2',      shape:'cone',     w:0,    h:0.13, d:0,    r:0.04, x:-0.09,  y:0.44, z: 0.83, rx:  0, ry:0, rz:  0, color:'#999999' },
+        { id:'p15', label:'Dente I3',      shape:'cone',     w:0,    h:0.13, d:0,    r:0.04, x: 0.09,  y:0.44, z: 0.83, rx:  0, ry:0, rz:  0, color:'#999999' },
+        { id:'p16', label:'Dente I4',      shape:'cone',     w:0,    h:0.13, d:0,    r:0.04, x: 0.22,  y:0.44, z: 0.80, rx:  0, ry:0, rz:  0, color:'#999999' },
+        { id:'p17', label:'Corno Sx',      shape:'cone',     w:0,    h:0.42, d:0,    r:0.09, x:-0.45,  y:1.50, z: 0.05, rx:-10, ry:0, rz:-18, color:'#888888' },
+        { id:'p18', label:'Corno Dx',      shape:'cone',     w:0,    h:0.42, d:0,    r:0.09, x: 0.45,  y:1.50, z: 0.05, rx:-10, ry:0, rz: 18, color:'#888888' },
+        { id:'p19', label:'Appendice Sx',  shape:'sphere',   w:0,    h:0,    d:0,    r:0.14, x:-0.82,  y:0.75, z: 0.18, rx:  0, ry:0, rz:  0, color:'#bb1818' },
+        { id:'p20', label:'Appendice Dx',  shape:'sphere',   w:0,    h:0,    d:0,    r:0.14, x: 0.82,  y:0.75, z: 0.18, rx:  0, ry:0, rz:  0, color:'#bb1818' },
+        { id:'p21', label:'Artiglio Sx',   shape:'cone',     w:0,    h:0.16, d:0,    r:0.06, x:-0.90,  y:0.66, z: 0.30, rx:-30, ry:0, rz:-20, color:'#777777' },
+        { id:'p22', label:'Artiglio Dx',   shape:'cone',     w:0,    h:0.16, d:0,    r:0.06, x: 0.90,  y:0.66, z: 0.30, rx:-30, ry:0, rz: 20, color:'#777777' },
+      ],
+    },
+  },
+
 ]
 
 export default TEMPLATES
