@@ -150,13 +150,21 @@ export default function MonsterEditor() {
 
   useEffect(() => {
     const handler = e => {
-      if (!(e.ctrlKey || e.metaKey)) return
-      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
-      else if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) { e.preventDefault(); redo() }
+      // Ignore if focus is inside a text input / textarea
+      const tag = document.activeElement?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
+        else if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) { e.preventDefault(); redo() }
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        // Delete selected part
+        if (selectedPart) { e.preventDefault(); delPart(selectedPart) }
+      }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [undo, redo])
+  }, [undo, redo, selectedPart])
 
   const loadMonsters = useCallback(async () => {
     try {
@@ -262,7 +270,9 @@ export default function MonsterEditor() {
   const set         = (k, v)   => { _pushUndo(); _commit({...curRef.current, [k]:v}) }
   const setRes      = (k, v)   => { _pushUndo(); _commit({...curRef.current, resistances:{...curRef.current.resistances,[k]:v}}) }
   const setPart     = (id, ch) => { _pushUndo(); _commit(_partUpdate(id, ch)) }
-  const setPartLive = (id, ch) => {              _commit(_partUpdate(id, ch)) }
+  // setPartLive: solo preview visivo — NON aggiorna curRef (che resta allo stato committato)
+  // così _pushUndo cattura sempre lo stato pre-modifica, anche dopo hover sui swatches
+  const setPartLive = (id, ch) => { setEditing(_partUpdate(id, ch)) }
   const addPart = () => { const p=newPart(); _pushUndo(); _commit({...curRef.current,geometry:{...curRef.current.geometry,parts:[...curRef.current.geometry.parts,p]}}); setExpandedPart(p.id); setSelectedPart(p.id) }
   const delPart = (id) => { _pushUndo(); _commit({...curRef.current,geometry:{...curRef.current.geometry,parts:curRef.current.geometry.parts.filter(p=>p.id!==id)}}); if(expandedPart===id) setExpandedPart(null); if(selectedPart===id) setSelectedPart(null) }
 
@@ -353,6 +363,17 @@ export default function MonsterEditor() {
                         padding:'3px 8px', cursor:'pointer', transition:'all 0.1s',
                       }}>{label}</button>
                   ))}
+                  <div style={{ width:1, height:18, background:C.border, margin:'0 4px' }} />
+                  <button onClick={() => delPart(selectedPart)} title="Elimina parte (Canc)"
+                    style={{
+                      background: C.redGhost, border:`1px solid ${C.redDim}`,
+                      color:'#cc4422', fontFamily:'monospace', fontSize:11, fontWeight:'bold',
+                      padding:'3px 10px', cursor:'pointer', letterSpacing:1, transition:'all 0.1s',
+                    }}
+                    onMouseEnter={e=>Object.assign(e.currentTarget.style,{background:'#3a0000',borderColor:C.red,color:'#ff5533'})}
+                    onMouseLeave={e=>Object.assign(e.currentTarget.style,{background:C.redGhost,borderColor:C.redDim,color:'#cc4422'})}>
+                    ⊗
+                  </button>
                 </div>
               )}
             </>
@@ -596,6 +617,7 @@ function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSe
         <PartRow key={part.id} part={part}
           expanded={expandedPart===part.id}
           selected={selectedPart===part.id}
+          allColors={[...new Set(parts.map(p=>p.color).filter(Boolean))]}
           onToggle={() => {
             const next = expandedPart===part.id ? null : part.id
             setExpandedPart(next)
@@ -609,7 +631,7 @@ function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSe
   )
 }
 
-function PartRow({ part, expanded, selected, onToggle, onUpdate, onLiveUpdate, onDelete }) {
+function PartRow({ part, expanded, selected, allColors, onToggle, onUpdate, onLiveUpdate, onDelete }) {
   const borderColor = selected ? C.red : expanded ? C.borderMed : C.border
   const bg = selected ? '#200a00' : expanded ? '#150900' : '#0d0603'
   return (
@@ -638,14 +660,14 @@ function PartRow({ part, expanded, selected, onToggle, onUpdate, onLiveUpdate, o
       {/* Expanded editor */}
       {expanded && (
         <div style={{ padding:'12px 12px 14px', borderTop:`1px solid ${C.border}` }}>
-          <PartEditor part={part} onChange={onUpdate} onLive={onLiveUpdate} />
+          <PartEditor part={part} onChange={onUpdate} onLive={onLiveUpdate} allColors={allColors} />
         </div>
       )}
     </div>
   )
 }
 
-function PartEditor({ part, onChange, onLive }) {
+function PartEditor({ part, onChange, onLive, allColors = [] }) {
   const Num = ({ label, k, step=0.05 }) => (
     <label style={{ display:'flex', flexDirection:'column', gap:4 }}>
       <span style={{ color:C.txtSub, fontSize:10, letterSpacing:1 }}>{label}</span>
@@ -686,14 +708,27 @@ function PartEditor({ part, onChange, onLive }) {
             {['box','sphere','cylinder','cone'].map(s=><option key={s} value={s}>{s}</option>)}
           </select>
         </label>
-        <label style={{ display:'flex', flexDirection:'column', gap:4 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
           <span style={{ color:C.txtSub, fontSize:10, letterSpacing:1 }}>COLORE</span>
-          <input type="color" value={part.color||'#cc2200'}
-            onInput={e => onLive?.({color:e.target.value})}
-            onChange={e => onChange({color:e.target.value})}
-            style={{ width:44, height:34, border:`1px solid ${C.borderMed}`,
-              padding:2, cursor:'pointer', background:C.bgInput }} />
-        </label>
+          <div style={{ display:'flex', alignItems:'center', gap:4, flexWrap:'wrap' }}>
+            <input type="color" value={part.color||'#cc2200'}
+              onInput={e => onLive?.({color:e.target.value})}
+              onBlur={e => onChange({color:e.target.value})}
+              style={{ width:44, height:34, border:`1px solid ${C.borderMed}`,
+                padding:2, cursor:'pointer', background:C.bgInput, flexShrink:0 }} />
+            {allColors.map(c => (
+              <div key={c} title={c}
+                onClick={() => onChange({color:c})}
+                style={{
+                  width: 18, height: 18, background: c, cursor:'pointer', flexShrink:0,
+                  border: `2px solid ${c === part.color ? '#fff' : '#33000066'}`,
+                  borderRadius:2, transition:'transform 0.1s',
+                }}
+                onMouseEnter={e=>{ e.currentTarget.style.transform='scale(1.25)' }}
+                onMouseLeave={e=>{ e.currentTarget.style.transform='scale(1)' }} />
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Dimensions */}

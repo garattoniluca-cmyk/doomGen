@@ -112,7 +112,7 @@ export function randomAlertSound(rng) {
     mood,
     intensity,
     layers,
-    dur:   r(0.7, 2.8),
+    dur:   r(0.3, 0.8),
     crush: bool(0.3) ? r(0.05, 0.45) : 0,
     room:  r(0.1, 0.55),
   }
