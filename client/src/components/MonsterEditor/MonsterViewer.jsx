@@ -22,12 +22,34 @@ function makeMesh(part) {
     ((part.rz || 0) * Math.PI) / 180
   )
   mesh.castShadow = true
+  mesh.userData.partId = part.id
   return mesh
 }
 
-export default function MonsterViewer({ geometry, onThumbnailCapture }) {
-  const mountRef = useRef(null)
-  const ctx = useRef({})
+function addOutline(mesh) {
+  const edges = new THREE.EdgesGeometry(mesh.geometry)
+  const line = new THREE.LineSegments(
+    edges,
+    new THREE.LineBasicMaterial({ color: 0xff6600, linewidth: 1 })
+  )
+  line.scale.setScalar(1.06)
+  line.userData.isOutline = true
+  mesh.add(line)
+}
+
+function removeOutline(mesh) {
+  const outline = mesh.children.find(c => c.userData.isOutline)
+  if (outline) {
+    outline.geometry.dispose()
+    outline.material.dispose()
+    mesh.remove(outline)
+  }
+}
+
+export default function MonsterViewer({ geometry, onThumbnailCapture, selectedPartId, onPartSelect }) {
+  const mountRef  = useRef(null)
+  const ctx       = useRef({})
+  const meshMapRef = useRef({})  // partId → mesh
 
   useEffect(() => {
     const el = mountRef.current
@@ -42,7 +64,7 @@ export default function MonsterViewer({ geometry, onThumbnailCapture }) {
 
     // ── Scene ──
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#3a7aaa')   // azzurro
+    scene.background = new THREE.Color('#3a7aaa')
     scene.fog = new THREE.Fog('#3a7aaa', 18, 40)
 
     const camera = new THREE.PerspectiveCamera(45, W / H, 0.01, 200)
@@ -57,7 +79,7 @@ export default function MonsterViewer({ geometry, onThumbnailCapture }) {
     fill.position.set(-4, 3, -3)
     scene.add(fill)
 
-    // ── Floor (verde grande) ──
+    // ── Floor ──
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(30, 30),
       new THREE.MeshLambertMaterial({ color: '#2d6a2d' })
@@ -74,7 +96,7 @@ export default function MonsterViewer({ geometry, onThumbnailCapture }) {
     scene.add(group)
 
     // ── Orbit state ──
-    const orbit = { theta: THUMB.theta, phi: THUMB.phi, r: THUMB.r, dragging: false, lx: 0, ly: 0 }
+    const orbit = { theta: THUMB.theta, phi: THUMB.phi, r: THUMB.r, dragging: false, lx: 0, ly: 0, moved: false }
 
     let raf
     const animate = () => {
@@ -115,22 +137,23 @@ export default function MonsterViewer({ geometry, onThumbnailCapture }) {
     if (!group) return
 
     group.children.slice().forEach(c => { c.geometry?.dispose(); c.material?.dispose(); group.remove(c) })
+    meshMapRef.current = {}
+
     if (geometry?.parts?.length) {
-      geometry.parts.forEach(part => group.add(makeMesh(part)))
+      geometry.parts.forEach(part => {
+        const mesh = makeMesh(part)
+        group.add(mesh)
+        meshMapRef.current[part.id] = mesh
+      })
     }
 
-    // Capture thumbnail from FIXED angle (always same position)
+    // Capture thumbnail from FIXED angle
     if (onThumbnailCapture) {
       setTimeout(() => {
         if (!renderer || !el) return
-
         const W = el.clientWidth, H = el.clientHeight
-
-        // Save current camera state
         const savedPos = camera.position.clone()
         const savedAspect = camera.aspect
-
-        // Set fixed thumbnail camera
         camera.aspect = 160 / 120
         camera.updateProjectionMatrix()
         camera.position.set(
@@ -139,34 +162,81 @@ export default function MonsterViewer({ geometry, onThumbnailCapture }) {
           THUMB.r * Math.cos(THUMB.theta) * Math.cos(THUMB.phi)
         )
         camera.lookAt(0, 0.9, 0)
-
-        // Render at thumbnail size
         renderer.setSize(160, 120, false)
         renderer.render(scene, camera)
         const src = renderer.domElement.toDataURL('image/jpeg', 0.85)
-
-        // Restore main renderer
         renderer.setSize(W, H, false)
         camera.position.copy(savedPos)
         camera.aspect = savedAspect
         camera.updateProjectionMatrix()
-
         onThumbnailCapture(src)
       }, 150)
     }
   }, [geometry, onThumbnailCapture])
 
-  // ── Orbit controls (vertical INVERTED) ──
-  const onDown  = useCallback(e => { const o = ctx.current.orbit; if (o) { o.dragging = true; o.lx = e.clientX; o.ly = e.clientY } }, [])
+  // Highlight selected part
+  useEffect(() => {
+    const map = meshMapRef.current
+    // Remove all existing outlines
+    Object.values(map).forEach(mesh => removeOutline(mesh))
+    // Add outline to selected
+    if (selectedPartId && map[selectedPartId]) {
+      addOutline(map[selectedPartId])
+    }
+  }, [selectedPartId, geometry])
+
+  // ── Orbit controls ──
+  const onDown  = useCallback(e => {
+    const o = ctx.current.orbit
+    if (o) { o.dragging = true; o.moved = false; o.lx = e.clientX; o.ly = e.clientY }
+  }, [])
+
   const onMove  = useCallback(e => {
     const o = ctx.current.orbit
     if (!o?.dragging) return
-    o.theta -= (e.clientX - o.lx) * 0.008
-    o.phi    = Math.max(0.04, Math.min(1.45, o.phi + (e.clientY - o.ly) * 0.008)) // + = inverted
+    const dx = e.clientX - o.lx, dy = e.clientY - o.ly
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) o.moved = true
+    o.theta -= dx * 0.008
+    o.phi    = Math.max(0.04, Math.min(1.45, o.phi + dy * 0.008))
     o.lx = e.clientX; o.ly = e.clientY
   }, [])
-  const onUp    = useCallback(() => { const o = ctx.current.orbit; if (o) o.dragging = false }, [])
-  const onWheel = useCallback(e => { const o = ctx.current.orbit; if (o) o.r = Math.max(1.2, Math.min(12, o.r + e.deltaY * 0.005)) }, [])
+
+  const onUp = useCallback(() => {
+    const o = ctx.current.orbit
+    if (o) o.dragging = false
+  }, [])
+
+  const onWheel = useCallback(e => {
+    const o = ctx.current.orbit
+    if (o) o.r = Math.max(1.2, Math.min(12, o.r + e.deltaY * 0.005))
+  }, [])
+
+  // ── Click → raycast → select part ──
+  const onClick = useCallback(e => {
+    if (!onPartSelect) return
+    const o = ctx.current.orbit
+    // If mouse moved while down, it was a drag — don't select
+    if (o?.moved) return
+
+    const { renderer, camera, group } = ctx.current
+    if (!renderer || !camera) return
+
+    const rect = renderer.domElement.getBoundingClientRect()
+    const mouse = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width)  *  2 - 1,
+      -((e.clientY - rect.top)  / rect.height) *  2 + 1
+    )
+    const raycaster = new THREE.Raycaster()
+    raycaster.setFromCamera(mouse, camera)
+
+    // Only test direct children of group (meshes), not outline lines
+    const meshes = group.children.filter(c => c.isMesh)
+    const hits = raycaster.intersectObjects(meshes)
+    if (hits.length > 0) {
+      const partId = hits[0].object.userData.partId
+      if (partId) onPartSelect(partId)
+    }
+  }, [onPartSelect])
 
   return (
     <div
@@ -177,6 +247,7 @@ export default function MonsterViewer({ geometry, onThumbnailCapture }) {
       onMouseUp={onUp}
       onMouseLeave={onUp}
       onWheel={onWheel}
+      onClick={onClick}
     />
   )
 }

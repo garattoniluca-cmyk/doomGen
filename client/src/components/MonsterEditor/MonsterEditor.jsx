@@ -94,6 +94,7 @@ export default function MonsterEditor() {
   const [tab, setTab] = useState('stats')
   const [expandedPart, setExpandedPart] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [selectedPart, setSelectedPart] = useState(null)
 
   const loadMonsters = useCallback(async () => {
     try {
@@ -109,12 +110,18 @@ export default function MonsterEditor() {
       behavior:m.behavior, sight_range:m.sight_range??10, attack_range:m.attack_range??2,
       resistances:m.resistances||{fire:0,ice:0,bullet:0},
       geometry:m.geometry||{v:1,parts:[]}, lore:m.lore||'' })
-    setThumbnail(m.thumbnail||null); setTab('stats'); setExpandedPart(null)
+    setThumbnail(m.thumbnail||null); setTab('stats'); setExpandedPart(null); setSelectedPart(null)
   }
 
   const newMonster = () => {
-    setEditing(DEFAULT_STATE()); setThumbnail(null); setTab('stats'); setExpandedPart(null)
+    setEditing(DEFAULT_STATE()); setThumbnail(null); setTab('stats'); setExpandedPart(null); setSelectedPart(null)
   }
+
+  const handlePartSelect = useCallback((partId) => {
+    setSelectedPart(partId)
+    setExpandedPart(partId)
+    setTab('geometry')
+  }, [])
 
   const saveMonster = async () => {
     if (!editing || saving) return
@@ -147,8 +154,8 @@ export default function MonsterEditor() {
   const set     = (k, v) => setEditing(e => ({...e, [k]:v}))
   const setRes  = (k, v) => setEditing(e => ({...e, resistances:{...e.resistances,[k]:v}}))
   const setPart = (id, ch) => setEditing(e => ({...e, geometry:{...e.geometry, parts:e.geometry.parts.map(p => p.id===id?{...p,...ch}:p)}}))
-  const addPart = () => { const p=newPart(); setEditing(e=>({...e,geometry:{...e.geometry,parts:[...e.geometry.parts,p]}})); setExpandedPart(p.id) }
-  const delPart = (id) => { setEditing(e=>({...e,geometry:{...e.geometry,parts:e.geometry.parts.filter(p=>p.id!==id)}})); if(expandedPart===id) setExpandedPart(null) }
+  const addPart = () => { const p=newPart(); setEditing(e=>({...e,geometry:{...e.geometry,parts:[...e.geometry.parts,p]}})); setExpandedPart(p.id); setSelectedPart(p.id) }
+  const delPart = (id) => { setEditing(e=>({...e,geometry:{...e.geometry,parts:e.geometry.parts.filter(p=>p.id!==id)}})); if(expandedPart===id) setExpandedPart(null); if(selectedPart===id) setSelectedPart(null) }
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', fontFamily:'Courier New, monospace',
@@ -192,7 +199,8 @@ export default function MonsterEditor() {
               SELEZIONA UN MOSTRO<br/>O CREANE UNO NUOVO
             </div>
           ) : (
-            <MonsterViewer geometry={editing.geometry} onThumbnailCapture={setThumbnail} />
+            <MonsterViewer geometry={editing.geometry} onThumbnailCapture={setThumbnail}
+              selectedPartId={selectedPart} onPartSelect={handlePartSelect} />
           )}
         </div>
 
@@ -261,6 +269,7 @@ export default function MonsterEditor() {
                 {tab==='stats'    && <StatsTab    editing={editing} set={set} setRes={setRes} />}
                 {tab==='geometry' && <GeometryTab parts={editing.geometry?.parts||[]}
                   expandedPart={expandedPart} setExpandedPart={setExpandedPart}
+                  selectedPart={selectedPart} setSelectedPart={setSelectedPart}
                   onAdd={addPart} onDelete={delPart} onUpdate={setPart} />}
                 {tab==='json'     && <JSONTab     editing={editing} />}
               </div>
@@ -356,7 +365,7 @@ function Slider({ label, value, min, max, color, unit, onChange }) {
 }
 
 // ── Geometry tab ──────────────────────────────────────────────────────────────
-function GeometryTab({ parts, expandedPart, setExpandedPart, onAdd, onDelete, onUpdate }) {
+function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSelectedPart, onAdd, onDelete, onUpdate }) {
   return (
     <div>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
@@ -373,7 +382,12 @@ function GeometryTab({ parts, expandedPart, setExpandedPart, onAdd, onDelete, on
       {parts.map(part => (
         <PartRow key={part.id} part={part}
           expanded={expandedPart===part.id}
-          onToggle={()=>setExpandedPart(expandedPart===part.id ? null : part.id)}
+          selected={selectedPart===part.id}
+          onToggle={() => {
+            const next = expandedPart===part.id ? null : part.id
+            setExpandedPart(next)
+            setSelectedPart(part.id)
+          }}
           onUpdate={ch=>onUpdate(part.id,ch)}
           onDelete={()=>onDelete(part.id)} />
       ))}
@@ -381,11 +395,14 @@ function GeometryTab({ parts, expandedPart, setExpandedPart, onAdd, onDelete, on
   )
 }
 
-function PartRow({ part, expanded, onToggle, onUpdate, onDelete }) {
+function PartRow({ part, expanded, selected, onToggle, onUpdate, onDelete }) {
+  const borderColor = selected ? C.red : expanded ? C.borderMed : C.border
+  const bg = selected ? '#200a00' : expanded ? '#150900' : '#0d0603'
   return (
     <div className="me-part-row"
-      style={{ marginBottom:3, border:`1px solid ${expanded?C.borderMed:C.border}`,
-        background:expanded?'#150900':'#0d0603', transition:'border-color 0.12s' }}>
+      style={{ marginBottom:3, border:`1px solid ${borderColor}`,
+        background: bg, transition:'border-color 0.12s',
+        boxShadow: selected ? `0 0 6px ${C.red}44` : 'none' }}>
       {/* Header */}
       <div onClick={onToggle}
         style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 8px',
@@ -393,7 +410,7 @@ function PartRow({ part, expanded, onToggle, onUpdate, onDelete }) {
         <span style={{ color:C.txtDim, fontSize:9, width:10 }}>{expanded?'▼':'▶'}</span>
         <span style={{ color:C.txtSub, fontSize:15 }}>{SHAPE_ICONS[part.shape]||'?'}</span>
         <div style={{ width:14, height:14, background:part.color, border:`1px solid #33000066`, flexShrink:0, borderRadius:1 }} />
-        <span style={{ flex:1, color:C.txtMain, fontSize:11, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+        <span style={{ flex:1, color:selected?C.txtAccent:C.txtMain, fontSize:11, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontWeight:selected?'bold':'normal' }}>
           {part.label}
         </span>
         <span style={{ color:C.txtGhost, fontSize:9, fontFamily:'monospace', flexShrink:0, marginRight:4 }}>
