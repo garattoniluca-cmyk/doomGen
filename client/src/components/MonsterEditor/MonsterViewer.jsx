@@ -59,10 +59,63 @@ function extractDimsFromScale(mesh) {
   return dims
 }
 
+// ── Overlay builders ──────────────────────────────────────────────────────────
+function makeCircleLine(radius, color, y = 0.05, segments = 64) {
+  const pts = []
+  for (let i = 0; i <= segments; i++) {
+    const a = (i / segments) * Math.PI * 2
+    pts.push(new THREE.Vector3(Math.cos(a) * radius, y, Math.sin(a) * radius))
+  }
+  return new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.75, depthWrite: false })
+  )
+}
+
+function makeFovSector(radius, fovDeg, color, y = 0.05) {
+  const half = (fovDeg / 2) * DEG
+  const segs = Math.max(8, Math.round(fovDeg / 2))
+  const pts  = [new THREE.Vector3(0, y, 0)]
+  for (let i = 0; i <= segs; i++) {
+    const a = -half + (i / segs) * fovDeg * DEG
+    pts.push(new THREE.Vector3(Math.sin(a) * radius, y, -Math.cos(a) * radius))
+  }
+  pts.push(new THREE.Vector3(0, y, 0))
+  return new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55, depthWrite: false })
+  )
+}
+
+function buildOverlays(stats) {
+  const group = new THREE.Group()
+  if (!stats) return group
+  const { sight_range = 10, fov_angle = 90, attack_range = 2,
+          attack_type = 'melee', ranged_range = 15 } = stats
+
+  // FOV / sight range (blue)
+  if (fov_angle >= 359) {
+    group.add(makeCircleLine(sight_range, 0x4499ff))
+  } else {
+    group.add(makeFovSector(sight_range, fov_angle, 0x4499ff))
+  }
+
+  // Melee range (orange)
+  group.add(makeCircleLine(attack_range, 0xff8800, 0.06))
+
+  // Ranged range (cyan, only when mixed and larger)
+  if (attack_type === 'mixed' && ranged_range > attack_range) {
+    group.add(makeCircleLine(ranged_range, 0x44aadd, 0.07))
+  }
+
+  return group
+}
+
 export default function MonsterViewer({
   geometry, onThumbnailCapture,
   selectedPartId, onPartSelect, onPartTransform,
   transformMode = 'translate', transformSpace = 'world',
+  stats = null,
 }) {
   const mountRef          = useRef(null)
   const ctx               = useRef({})
@@ -105,6 +158,9 @@ export default function MonsterViewer({
 
     const group = new THREE.Group()
     scene.add(group)
+
+    const overlayGroup = new THREE.Group()
+    scene.add(overlayGroup)
 
     // ── TransformControls ───────────────────────────────────────────────────
     const tc = new TransformControls(camera, canvas)
@@ -201,7 +257,7 @@ export default function MonsterViewer({
     window.addEventListener('resize', onResize)
     requestAnimationFrame(onResize)
 
-    ctx.current = { renderer, scene, camera, group, orbit, tc, el }
+    ctx.current = { renderer, scene, camera, group, overlayGroup, orbit, tc, el }
 
     return () => {
       cancelAnimationFrame(raf)
@@ -213,6 +269,7 @@ export default function MonsterViewer({
       canvas.removeEventListener('mouseleave', handleMouseLeave)
       tc.detach(); tc.dispose(); scene.remove(tc)
       group.children.slice().forEach(c => { c.geometry?.dispose(); c.material?.dispose() })
+      overlayGroup.children.slice().forEach(c => { c.geometry?.dispose(); c.material?.dispose() })
       renderer.dispose()
       if (el.contains(canvas)) el.removeChild(canvas)
     }
@@ -269,6 +326,15 @@ export default function MonsterViewer({
       }, 150)
     }
   }, [geometry, onThumbnailCapture])
+
+  // ── Rebuild stat overlays (FOV cone, melee/ranged range circles) ───────────
+  useEffect(() => {
+    const { overlayGroup } = ctx.current
+    if (!overlayGroup) return
+    overlayGroup.children.slice().forEach(c => { c.geometry?.dispose(); c.material?.dispose(); overlayGroup.remove(c) })
+    const built = buildOverlays(stats)
+    built.children.slice().forEach(c => { overlayGroup.add(c) })
+  }, [stats])
 
   // ── Selezione highlight + attach TransformControls ──────────────────────────
   useEffect(() => {

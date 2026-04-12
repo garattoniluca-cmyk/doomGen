@@ -76,8 +76,17 @@ const DEFAULT_GEOMETRY = {
 
 const DEFAULT_STATE = () => ({
   id: null, name: 'Nuovo Mostro',
-  health:100, speed:5, damage:20, behavior:'patrol',
-  sight_range:10, attack_range:2,
+  // movimento
+  move_type: 'walk', speed: 5, rotate_speed: 90, behavior: 'patrol',
+  // visuale
+  sight_range: 10, fov_angle: 90,
+  // vita
+  health: 100, hp_regen: 0, hp_regen_rate: 0,
+  // attacco
+  attack_type: 'melee',
+  attack_range: 2, damage: 20, melee_rate: 1,
+  ranged_range: 15, ranged_damage: 15, ranged_rate: 0.5,
+  // altro
   resistances: { fire:0, ice:0, bullet:0 },
   geometry: { v:1, parts: DEFAULT_GEOMETRY.parts.map(p => ({...p})) },
   lore: '',
@@ -245,8 +254,13 @@ export default function MonsterEditor() {
 
   const selectMonster = (m) => {
     undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
-    const s = { id:m.id, name:m.name, health:m.health, speed:m.speed, damage:m.damage,
-      behavior:m.behavior, sight_range:m.sight_range??10, attack_range:m.attack_range??2,
+    const s = { id:m.id, name:m.name,
+      move_type: m.move_type||'walk', speed:m.speed??5, rotate_speed:m.rotate_speed??90, behavior:m.behavior||'patrol',
+      sight_range:m.sight_range??10, fov_angle:m.fov_angle??90,
+      health:m.health??100, hp_regen:m.hp_regen??0, hp_regen_rate:m.hp_regen_rate??0,
+      attack_type:m.attack_type||'melee',
+      attack_range:m.attack_range??2, damage:m.damage??20, melee_rate:m.melee_rate??1,
+      ranged_range:m.ranged_range??15, ranged_damage:m.ranged_damage??15, ranged_rate:m.ranged_rate??0.5,
       resistances:m.resistances||{fire:0,ice:0,bullet:0},
       geometry:m.geometry||{v:1,parts:[]}, lore:m.lore||'',
       sounds:m.sounds||randomMonsterSounds(m.name||'monster') }
@@ -283,11 +297,17 @@ export default function MonsterEditor() {
       const r = await fetch(url, {
         method: editing.id ? 'PUT' : 'POST',
         headers: { Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
-        body: JSON.stringify({ name:editing.name, health:editing.health, speed:editing.speed,
-          damage:editing.damage, behavior:editing.behavior, sight_range:editing.sight_range,
-          attack_range:editing.attack_range, resistances:editing.resistances,
-          geometry:editing.geometry, thumbnail, lore:editing.lore,
-          sounds:editing.sounds }),
+        body: JSON.stringify({
+          name:editing.name, behavior:editing.behavior,
+          move_type:editing.move_type, speed:editing.speed, rotate_speed:editing.rotate_speed,
+          sight_range:editing.sight_range, fov_angle:editing.fov_angle,
+          health:editing.health, hp_regen:editing.hp_regen, hp_regen_rate:editing.hp_regen_rate,
+          attack_type:editing.attack_type,
+          attack_range:editing.attack_range, damage:editing.damage, melee_rate:editing.melee_rate,
+          ranged_range:editing.ranged_range, ranged_damage:editing.ranged_damage, ranged_rate:editing.ranged_rate,
+          resistances:editing.resistances, geometry:editing.geometry, thumbnail, lore:editing.lore,
+          sounds:editing.sounds,
+        }),
       })
       if (r.ok) {
         const data = await r.json()
@@ -317,8 +337,12 @@ export default function MonsterEditor() {
     const s = {
       id: null,
       name: m.name + ' (copia)',
-      health: m.health, speed: m.speed, damage: m.damage,
-      behavior: m.behavior, sight_range: m.sight_range ?? 10, attack_range: m.attack_range ?? 2,
+      move_type: m.move_type||'walk', speed: m.speed??5, rotate_speed: m.rotate_speed??90, behavior: m.behavior||'patrol',
+      sight_range: m.sight_range??10, fov_angle: m.fov_angle??90,
+      health: m.health??100, hp_regen: m.hp_regen??0, hp_regen_rate: m.hp_regen_rate??0,
+      attack_type: m.attack_type||'melee',
+      attack_range: m.attack_range??2, damage: m.damage??20, melee_rate: m.melee_rate??1,
+      ranged_range: m.ranged_range??15, ranged_damage: m.ranged_damage??15, ranged_rate: m.ranged_rate??0.5,
       resistances: m.resistances || { fire:0, ice:0, bullet:0 },
       geometry: { v:1, parts: (m.geometry?.parts || []).map(p => ({ ...p, id: uid() })) },
       lore: m.lore || '',
@@ -485,6 +509,7 @@ export default function MonsterEditor() {
                 onPartSelect={tab === 'geometry' ? handlePartSelect : null}
                 onPartTransform={handlePartTransform}
                 transformMode={transformMode} transformSpace={transformSpace}
+                stats={editing}
               />
               {/* ── Gizmo toolbar overlay ── */}
               {selectedPart && (
@@ -708,44 +733,143 @@ function MonsterCard({ monster, selected, onClick, onDelete, onDuplicate }) {
 // ── Stats tab ─────────────────────────────────────────────────────────────────
 function StatsTab({ editing, set, setRes }) {
   const r = editing.resistances || {}
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-      <Slider label="VITA"      value={editing.health}       min={1} max={500} color='#cc4400' unit={editing.health}            onChange={v=>set('health',v)} />
-      <Slider label="VELOCITÀ"  value={editing.speed}        min={1} max={20}  color='#ffcc00' unit={`${editing.speed}/20`}     onChange={v=>set('speed',v)} />
-      <Slider label="DANNO"     value={editing.damage}       min={1} max={200} color='#cc0000' unit={editing.damage}            onChange={v=>set('damage',v)} />
-      <Slider label="VISUALE"   value={editing.sight_range}  min={1} max={30}  color='#4488cc' unit={`${editing.sight_range}m`} onChange={v=>set('sight_range',v)} />
-      <Slider label="ATTACCO"   value={editing.attack_range} min={1} max={10}  color='#cc8800' unit={`${editing.attack_range}m`}onChange={v=>set('attack_range',v)} />
 
-      <div style={{ marginTop:2 }}>
-        <Label>COMPORTAMENTO</Label>
-        <select value={editing.behavior} onChange={e=>set('behavior',e.target.value)}
-          style={{ width:'100%', background:C.bgInput, border:`1px solid ${C.borderMed}`,
-            color:C.txtBright, fontFamily:'monospace', fontSize:12, padding:'6px 8px',
-            outline:'none', cursor:'pointer', marginTop:5 }}>
-          {BEHAVIORS.map(b => <option key={b} value={b}>{b}</option>)}
-        </select>
+  const ToggleRow = ({ label, options, value, onChange }) => (
+    <div>
+      <div style={{ color:C.txtSub, fontSize:10, letterSpacing:2, marginBottom:5 }}>{label}</div>
+      <div style={{ display:'flex', gap:4 }}>
+        {options.map(([v, l]) => (
+          <button key={v} onClick={() => onChange(v)}
+            style={{
+              flex:1, background: value===v ? C.red : C.bgInput,
+              border: `1px solid ${value===v ? C.red : C.borderMed}`,
+              color: value===v ? '#fff' : C.txtSub,
+              fontFamily:'monospace', fontSize:10, letterSpacing:1,
+              padding:'5px 0', cursor:'pointer', transition:'all 0.15s',
+            }}>
+            {l}
+          </button>
+        ))}
       </div>
+    </div>
+  )
 
-      <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:12, marginTop:4 }}>
-        <Label>RESISTENZE</Label>
-        <div style={{ marginTop:10, display:'flex', flexDirection:'column', gap:10 }}>
-          <Slider label="FUOCO"      value={r.fire||0}   min={0} max={100} color='#ff4400' unit={`${r.fire||0}%`}   onChange={v=>setRes('fire',v)} />
-          <Slider label="GHIACCIO"   value={r.ice||0}    min={0} max={100} color='#44aaff' unit={`${r.ice||0}%`}    onChange={v=>setRes('ice',v)} />
-          <Slider label="PROIETTILE" value={r.bullet||0} min={0} max={100} color='#88aa44' unit={`${r.bullet||0}%`} onChange={v=>setRes('bullet',v)} />
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:0 }}>
+
+      {/* ── DEAMBULAZIONE ── */}
+      <StatSection title="DEAMBULAZIONE">
+        <ToggleRow label="TIPO" value={editing.move_type} onChange={v=>set('move_type',v)}
+          options={[['walk','TERRA'],['fly','VOLO'],['hovercraft','HOVER']]} />
+        <Slider label="VELOCITÀ" value={editing.speed} min={1} max={20} color='#ffcc00'
+          unit={`${editing.speed}/20`} onChange={v=>set('speed',v)} />
+        <Slider label="ROT. VELOCITÀ" value={editing.rotate_speed} min={10} max={360}
+          color='#ffaa44' unit={`${editing.rotate_speed}°/s`} onChange={v=>set('rotate_speed',v)} />
+        <div>
+          <div style={{ color:C.txtSub, fontSize:10, letterSpacing:2, marginBottom:5 }}>COMPORTAMENTO</div>
+          <select value={editing.behavior} onChange={e=>set('behavior',e.target.value)}
+            style={{ width:'100%', background:C.bgInput, border:`1px solid ${C.borderMed}`,
+              color:C.txtBright, fontFamily:'monospace', fontSize:12, padding:'6px 8px',
+              outline:'none', cursor:'pointer' }}>
+            {BEHAVIORS.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
         </div>
+      </StatSection>
+
+      {/* ── VISUALE ── */}
+      <StatSection title="VISUALE">
+        <Slider label="RAGGIO VISTA" value={editing.sight_range} min={1} max={50}
+          color='#4499ff' unit={`${editing.sight_range}m`} onChange={v=>set('sight_range',v)} />
+        <Slider label="ANGOLO FOV" value={editing.fov_angle} min={10} max={360}
+          color='#2277cc' unit={`${editing.fov_angle}°`} onChange={v=>set('fov_angle',v)} />
+      </StatSection>
+
+      {/* ── VITA ── */}
+      <StatSection title="VITA">
+        <Slider label="HP MAX" value={editing.health} min={1} max={500}
+          color='#cc4400' unit={editing.health} onChange={v=>set('health',v)} />
+        <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
+          <input type="checkbox" checked={!!editing.hp_regen}
+            onChange={e => set('hp_regen', e.target.checked ? 1 : 0)}
+            style={{ accentColor:C.red, cursor:'pointer', width:14, height:14 }} />
+          <span style={{ color: editing.hp_regen ? C.txtMain : C.txtDim, fontSize:10, letterSpacing:2, transition:'color 0.15s' }}>
+            REGEN HP
+          </span>
+          {!!editing.hp_regen && (
+            <span style={{ color:'#44cc44', fontSize:10, fontFamily:'monospace', marginLeft:'auto' }}>
+              +{editing.hp_regen_rate}/s
+            </span>
+          )}
+        </label>
+        {!!editing.hp_regen && (
+          <Slider label="CADENZA REGEN" value={editing.hp_regen_rate} min={0.1} max={20} step={0.1}
+            color='#44cc44' unit={`${editing.hp_regen_rate}/s`} onChange={v=>set('hp_regen_rate',v)} />
+        )}
+      </StatSection>
+
+      {/* ── ATTACCO ── */}
+      <StatSection title="ATTACCO">
+        <ToggleRow label="TIPO ATTACCO" value={editing.attack_type} onChange={v=>set('attack_type',v)}
+          options={[['melee','MISCHIA'],['mixed','MISTO']]} />
+        <div style={{ paddingLeft:8, borderLeft:`2px solid #882200` }}>
+          <div style={{ color:'#cc6600', fontSize:9, letterSpacing:2, marginBottom:8 }}>MISCHIA</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            <Slider label="PORTATA" value={editing.attack_range} min={0.5} max={5} step={0.1}
+              color='#cc8800' unit={`${editing.attack_range}m`} onChange={v=>set('attack_range',v)} />
+            <Slider label="DANNO" value={editing.damage} min={1} max={200}
+              color='#cc2200' unit={editing.damage} onChange={v=>set('damage',v)} />
+            <Slider label="CADENZA" value={editing.melee_rate} min={0.1} max={5} step={0.1}
+              color='#cc5500' unit={`${editing.melee_rate}×/s`} onChange={v=>set('melee_rate',v)} />
+          </div>
+        </div>
+        {editing.attack_type === 'mixed' && (
+          <div style={{ paddingLeft:8, borderLeft:`2px solid #002288` }}>
+            <div style={{ color:'#4488cc', fontSize:9, letterSpacing:2, marginBottom:8 }}>DISTANZA</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              <Slider label="PORTATA" value={editing.ranged_range} min={1} max={50}
+                color='#4488cc' unit={`${editing.ranged_range}m`} onChange={v=>set('ranged_range',v)} />
+              <Slider label="DANNO" value={editing.ranged_damage} min={1} max={200}
+                color='#2266aa' unit={editing.ranged_damage} onChange={v=>set('ranged_damage',v)} />
+              <Slider label="CADENZA" value={editing.ranged_rate} min={0.1} max={5} step={0.1}
+                color='#3377bb' unit={`${editing.ranged_rate}×/s`} onChange={v=>set('ranged_rate',v)} />
+            </div>
+          </div>
+        )}
+      </StatSection>
+
+      {/* ── RESISTENZE ── */}
+      <StatSection title="RESISTENZE" last>
+        <Slider label="FUOCO"      value={r.fire||0}   min={0} max={100} color='#ff4400' unit={`${r.fire||0}%`}   onChange={v=>setRes('fire',v)} />
+        <Slider label="GHIACCIO"   value={r.ice||0}    min={0} max={100} color='#44aaff' unit={`${r.ice||0}%`}    onChange={v=>setRes('ice',v)} />
+        <Slider label="PROIETTILE" value={r.bullet||0} min={0} max={100} color='#88aa44' unit={`${r.bullet||0}%`} onChange={v=>setRes('bullet',v)} />
+      </StatSection>
+
+    </div>
+  )
+}
+
+function StatSection({ title, children, last }) {
+  return (
+    <div style={{ marginBottom: last ? 0 : 4 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 0 5px',
+        borderBottom:`1px solid ${C.border}`, marginBottom:10 }}>
+        <span style={{ color:C.red, fontSize:9, letterSpacing:4, fontWeight:'bold' }}>{title}</span>
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:12 }}>
+        {children}
       </div>
     </div>
   )
 }
 
-function Slider({ label, value, min, max, color, unit, onChange }) {
+function Slider({ label, value, min, max, step = 1, color, unit, onChange }) {
   return (
     <div>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:5 }}>
         <span style={{ color:C.txtSub, fontSize:10, letterSpacing:2 }}>{label}</span>
         <span style={{ color:color, fontSize:11, fontFamily:'monospace', fontWeight:'bold' }}>{unit}</span>
       </div>
-      <input type="range" min={min} max={max} value={value}
+      <input type="range" min={min} max={max} step={step} value={value}
         onChange={e=>onChange(Number(e.target.value))}
         style={{ width:'100%', accentColor:color, cursor:'pointer', height:4 }} />
     </div>
