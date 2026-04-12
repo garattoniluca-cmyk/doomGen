@@ -4,6 +4,7 @@ import PageHeader from '../PageHeader.jsx'
 import MonsterViewer from './MonsterViewer.jsx'
 import { monsterSfx, randomMonsterSounds, randomAlertSound, randomMovementSound,
          MOVEMENT_CATEGORIES, MOOD_COLORS } from '../../utils/monsterSfx.js'
+import TEMPLATES from '../../data/monsterTemplates.js'
 
 // ── Inject spinner + scrollbar styles once ────────────────────────────────────
 const STYLE_ID = 'monster-editor-styles'
@@ -169,6 +170,7 @@ export default function MonsterEditor() {
   const [transformMode, setTransformMode] = useState('translate')
   const [transformSpace, setTransformSpace] = useState('world')
   const [showOverlays, setShowOverlays] = useState(true)
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false)
 
   // ── Undo / Redo ───────────────────────────────────────────────────────────────
   // curRef è aggiornato SINCRONICAMENTE ad ogni mutazione (non aspetta il render)
@@ -287,9 +289,26 @@ export default function MonsterEditor() {
     setThumbnail(m.thumbnail||null); setTab('stats'); setExpandedPart(null); setSelectedPart(null)
   }
 
-  const newMonster = () => {
+  const newMonster = () => setShowTemplatePicker(true)
+
+  const startFromTemplate = (tpl) => {
+    setShowTemplatePicker(false)
     undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
-    const s = DEFAULT_STATE(); curRef.current = s; savedRef.current = null; setEditing(s)
+    const s = tpl
+      ? {
+          id: null, name: tpl.name,
+          move_type: tpl.move_type||'walk', speed: tpl.speed??5, rotate_speed: tpl.rotate_speed??90, hover_height: tpl.hover_height??1.5,
+          sight_range: tpl.sight_range??10, fov_angle: tpl.fov_angle??90, fov_angle_v: tpl.fov_angle_v??60,
+          health: tpl.health??100, hp_regen: 0, hp_regen_rate: 0,
+          attack_type: tpl.attack_type||'melee',
+          attack_range: tpl.attack_range??2, damage: tpl.damage??20, melee_rate: tpl.melee_rate??1,
+          ranged_range: tpl.ranged_range??15, ranged_damage: tpl.ranged_damage??15, ranged_rate: tpl.ranged_rate??0.5,
+          geometry: { ..._ensureAnchors(tpl.geometry), parts: tpl.geometry.parts.map(p => ({...p, id: uid()})) },
+          lore: tpl.description||'',
+          sounds: randomMonsterSounds(tpl.name),
+        }
+      : DEFAULT_STATE()
+    curRef.current = s; savedRef.current = null; setEditing(s)
     savedThumbRef.current = null
     _initSym(s.geometry.parts)
     setThumbnail(null); setTab('stats'); setExpandedPart(null); setSelectedPart(null)
@@ -705,6 +724,54 @@ export default function MonsterEditor() {
           )}
         </div>
       </div>
+
+      {/* ── Template Picker Modal ── */}
+      {showTemplatePicker && (
+        <div style={{
+          position:'absolute', inset:0, background:'rgba(2,1,0,0.93)',
+          display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+          zIndex:100, padding:'24px',
+        }}>
+          <div style={{ color:C.red, fontSize:11, letterSpacing:5, marginBottom:20, fontFamily:'monospace' }}>
+            SCEGLI TEMPLATE DI PARTENZA
+          </div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:12, justifyContent:'center', maxWidth:760, marginBottom:24 }}>
+            {/* Vuoto */}
+            <TemplateCard
+              name="VUOTO" description="Schema base minimalista"
+              onClick={() => startFromTemplate(null)}
+            />
+            {TEMPLATES.map(t => (
+              <TemplateCard key={t.id}
+                name={t.name.toUpperCase()} description={t.description}
+                stats={`${t.health}HP · ${t.speed}spd · ${t.attack_type==='mixed'?'misto':'mischia'}`}
+                onClick={() => startFromTemplate(t)}
+              />
+            ))}
+          </div>
+          <button onClick={() => setShowTemplatePicker(false)}
+            style={{ background:'transparent', border:`1px solid ${C.borderMed}`, color:C.txtDim,
+              fontFamily:'monospace', fontSize:10, letterSpacing:3, padding:'7px 28px', cursor:'pointer' }}
+            onMouseEnter={e=>Object.assign(e.currentTarget.style,{borderColor:C.red,color:C.txtAccent})}
+            onMouseLeave={e=>Object.assign(e.currentTarget.style,{borderColor:C.borderMed,color:C.txtDim})}>
+            ANNULLA
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TemplateCard({ name, description, stats, onClick }) {
+  return (
+    <div onClick={onClick}
+      style={{ width:160, background:C.bgCard, border:`1px solid ${C.border}`, padding:'12px 10px',
+        cursor:'pointer', transition:'all 0.15s', textAlign:'center' }}
+      onMouseEnter={e=>Object.assign(e.currentTarget.style,{borderColor:C.red,background:C.bgCardSel})}
+      onMouseLeave={e=>Object.assign(e.currentTarget.style,{borderColor:C.border,background:C.bgCard})}>
+      <div style={{ color:C.txtAccent, fontSize:10, letterSpacing:2, marginBottom:6, fontFamily:'monospace' }}>{name}</div>
+      <div style={{ color:C.txtSub, fontSize:9, letterSpacing:1, lineHeight:1.5, marginBottom:stats?6:0 }}>{description}</div>
+      {stats && <div style={{ color:C.txtGhost, fontSize:8, letterSpacing:1 }}>{stats}</div>}
     </div>
   )
 }
