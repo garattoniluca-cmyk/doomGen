@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js'
 
-const THUMB = { theta: 0.5, phi: 0.32, r: 4.5 }
+const THUMB = { theta: 0.5, phi: 0.32, r: 7 }
 const DEG = Math.PI / 180
 const RAD = 180 / Math.PI
 
@@ -165,8 +165,8 @@ export default function MonsterViewer({
     // Scene
     const scene = new THREE.Scene()
     scene.background = new THREE.Color('#3a7aaa')
-    scene.fog = new THREE.Fog('#3a7aaa', 18, 40)
-    const camera = new THREE.PerspectiveCamera(45, W / H, 0.01, 200)
+    scene.fog = new THREE.Fog('#3a7aaa', 120, 400)
+    const camera = new THREE.PerspectiveCamera(45, W / H, 0.01, 2000)
 
     scene.add(new THREE.AmbientLight('#aaccee', 1.2))
     const sun = new THREE.DirectionalLight('#ffffff', 2.0)
@@ -174,9 +174,9 @@ export default function MonsterViewer({
     const fill = new THREE.DirectionalLight('#ffddaa', 0.5)
     fill.position.set(-4, 3, -3); scene.add(fill)
 
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshLambertMaterial({ color: '#2d6a2d' }))
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshLambertMaterial({ color: '#2d6a2d' }))
     floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor)
-    scene.add(new THREE.GridHelper(30, 30, '#1a4a1a', '#1a4a1a'))
+    scene.add(new THREE.GridHelper(400, 80, '#1a4a1a', '#1a4a1a'))
 
     const group = new THREE.Group()
     scene.add(group)
@@ -246,7 +246,7 @@ export default function MonsterViewer({
         if (partId) onPartSelectRef.current(partId)
       }
     }
-    const handleWheel      = e => { orbit.r = Math.max(1.2, Math.min(12, orbit.r + e.deltaY * 0.005)) }
+    const handleWheel      = e => { orbit.r = Math.max(1.2, Math.min(200, orbit.r * (1 + e.deltaY * 0.001))) }
     const handleMouseLeave = () => { orbit.dragging = false }
 
     canvas.addEventListener('mousedown',  handleMouseDown)

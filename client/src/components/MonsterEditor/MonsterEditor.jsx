@@ -784,8 +784,8 @@ function StatsTab({ editing, set }) {
           color='#4499ff' unit={`${editing.sight_range}m`} onChange={v=>set('sight_range',v)} />
         <Slider label="FOV ORIZZONTALE" value={editing.fov_angle} min={10} max={360}
           color='#2277cc' unit={`${editing.fov_angle}°`} onChange={v=>set('fov_angle',v)} />
-        <Slider label="FOV VERTICALE" value={editing.fov_angle_v} min={10} max={180}
-          color='#1155aa' unit={`${editing.fov_angle_v}°`} onChange={v=>set('fov_angle_v',v)} />
+        <Slider label="FOV VERTICALE" value={editing.fov_angle_v ?? 60} min={10} max={180}
+          color='#1155aa' unit={`${editing.fov_angle_v ?? 60}°`} onChange={v=>set('fov_angle_v',v)} />
       </StatSection>
 
       {/* ── VITA ── */}
@@ -862,13 +862,14 @@ function StatSection({ title, children, last }) {
 }
 
 function Slider({ label, value, min, max, step = 1, color, unit, onChange }) {
+  const v = value ?? min ?? 0
   return (
     <div>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:5 }}>
         <span style={{ color:C.txtSub, fontSize:10, letterSpacing:2 }}>{label}</span>
         <span style={{ color:color, fontSize:11, fontFamily:'monospace', fontWeight:'bold' }}>{unit}</span>
       </div>
-      <input type="range" min={min} max={max} step={step} value={value}
+      <input type="range" min={min} max={max} step={step} value={v}
         onChange={e=>onChange(Number(e.target.value))}
         style={{ width:'100%', accentColor:color, cursor:'pointer', height:4 }} />
     </div>
