@@ -169,7 +169,7 @@ export default function MonsterEditor() {
   const [selectedPart, setSelectedPart] = useState(null)
   const [transformMode, setTransformMode] = useState('translate')
   const [transformSpace, setTransformSpace] = useState('world')
-  const [showOverlays, setShowOverlays] = useState(true)
+  const [showOverlays, setShowOverlays] = useState(false)
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
 
   // ── Undo / Redo ───────────────────────────────────────────────────────────────

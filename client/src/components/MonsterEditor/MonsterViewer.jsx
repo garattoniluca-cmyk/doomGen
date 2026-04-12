@@ -6,6 +6,245 @@ const THUMB = { theta: 0.5, phi: 0.32, r: 7 }
 const DEG = Math.PI / 180
 const RAD = 180 / Math.PI
 
+// ── Lava shader ───────────────────────────────────────────────────────────────
+const LAVA_VERT = `
+  #include <fog_pars_vertex>
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    #include <fog_vertex>
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`
+const LAVA_FRAG = `
+  #include <fog_pars_fragment>
+  uniform float time;
+  varying vec2 vUv;
+
+  float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453123); }
+  float noise(vec2 p){
+    vec2 i=floor(p), f=fract(p);
+    f=f*f*(3.0-2.0*f);
+    return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+               mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
+  }
+  float fbm(vec2 p){
+    float v=0.0, a=0.52;
+    for(int i=0;i<6;i++){ v+=a*noise(p); p=p*2.13+vec2(1.3,1.7); a*=0.48; }
+    return v;
+  }
+  void main(){
+    vec2 uv  = vUv * 5.0;
+    float t1 = time * 0.033, t2 = time * 0.021;
+    vec2 flow = uv + vec2(t1, t2);
+    float n   = fbm(flow);
+    float n2  = fbm(flow * 1.75 + vec2(n * 2.1, n * 0.85) + vec2(-t2, t1*0.6));
+
+    vec3 col = mix(vec3(0.02,0.005,0.0),  vec3(0.40,0.035,0.0), smoothstep(0.06,0.30,n2));
+    col = mix(col, vec3(0.90, 0.32, 0.0), smoothstep(0.30,0.55,n2));
+    col = mix(col, vec3(1.0,  0.85, 0.12),smoothstep(0.58,0.76,n2));
+    col = mix(col, vec3(1.0,  0.97, 0.72),smoothstep(0.78,0.92,n2));
+
+    gl_FragColor = vec4(col, 1.0);
+    #include <fog_fragment>
+  }
+`
+
+// ── Scene element builders ────────────────────────────────────────────────────
+function makeLava(scene) {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { ...THREE.UniformsLib.fog, time: { value: 0 } },
+    vertexShader:   LAVA_VERT,
+    fragmentShader: LAVA_FRAG,
+    fog: true,
+  })
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(280, 280), mat)
+  mesh.rotation.x = -Math.PI / 2
+  mesh.position.y = -0.52
+  scene.add(mesh)
+  return mat
+}
+
+function makeGazebo(scene) {
+  const N    = 6
+  const PRAD = 4.65
+  const mStone    = new THREE.MeshLambertMaterial({ color: '#3a3228' })
+  const mStoneMid = new THREE.MeshLambertMaterial({ color: '#4a4035' })
+  const mRoof     = new THREE.MeshLambertMaterial({ color: '#252018' })
+
+  const add = (geo, mat, x=0, y=0, z=0, rx=0, ry=0, rz=0, shadow=false) => {
+    const m = new THREE.Mesh(geo, mat)
+    m.position.set(x, y, z)
+    m.rotation.set(rx, ry, rz)
+    m.castShadow  = shadow
+    m.receiveShadow = true
+    scene.add(m)
+    return m
+  }
+
+  // Platform + steps
+  add(new THREE.CylinderGeometry(5.55, 5.85, 0.50, 8), mStone,    0, -0.25, 0)
+  add(new THREE.CylinderGeometry(6.40, 6.70, 0.30, 8), mStoneMid, 0, -0.65, 0)
+  add(new THREE.CylinderGeometry(7.20, 7.55, 0.30, 8), mStone,    0, -0.95, 0)
+
+  // Floor surface (slightly lighter stone disc)
+  add(new THREE.CylinderGeometry(5.50, 5.50, 0.06, 8), mStoneMid, 0, 0.03, 0)
+
+  // Floor tile grooves (thin box rings)
+  for (let r of [1.5, 3.0, 4.5]) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(r, 0.04, 4, 32),
+      mStone
+    )
+    ring.rotation.x = Math.PI / 2
+    ring.position.y = 0.07
+    scene.add(ring)
+  }
+
+  // Pillars
+  for (let i = 0; i < N; i++) {
+    const ang = (i / N) * Math.PI * 2
+    const px  = Math.sin(ang) * PRAD
+    const pz  = Math.cos(ang) * PRAD
+
+    add(new THREE.CylinderGeometry(0.35, 0.41, 0.28, 8), mStoneMid, px, 0.14, pz)
+    add(new THREE.CylinderGeometry(0.21, 0.27, 3.65, 8), mStone,    px, 2.10, pz, 0,0,0, true)
+    add(new THREE.CylinderGeometry(0.31, 0.22, 0.30, 8), mStoneMid, px, 4.08, pz)
+
+    // Arch lintel
+    const a2      = ((i+1) / N) * Math.PI * 2
+    const midAng  = (ang + a2) / 2
+    const segLen  = 2 * PRAD * Math.sin(Math.PI / N) * 0.87
+    const archX   = Math.sin(midAng) * PRAD
+    const archZ   = Math.cos(midAng) * PRAD
+    add(new THREE.BoxGeometry(segLen, 0.24, 0.22), mStone,    archX, 3.90, archZ, 0, -midAng, 0)
+    add(new THREE.BoxGeometry(0.30,   0.40, 0.24), mStoneMid, archX, 4.12, archZ, 0, -midAng, 0)
+
+    // Side columns (thin decorative strips on pillars)
+    add(new THREE.BoxGeometry(0.08, 3.65, 0.08), mStoneMid, px + Math.sin(ang+0.18)*0.24, 2.10, pz + Math.cos(ang+0.18)*0.24, 0,0,0, false)
+    add(new THREE.BoxGeometry(0.08, 3.65, 0.08), mStoneMid, px + Math.sin(ang-0.18)*0.24, 2.10, pz + Math.cos(ang-0.18)*0.24, 0,0,0, false)
+  }
+
+  // Ring beam
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(PRAD, 0.17, 8, N*4), mStone)
+  ring.rotation.x = Math.PI / 2
+  ring.position.y = 4.22
+  scene.add(ring)
+
+  // Roof cone
+  add(new THREE.ConeGeometry(5.5, 4.0, 8), mRoof, 0, 6.22, 0, 0,0,0, true)
+
+  // Roof ribs
+  for (let i = 0; i < 8; i++) {
+    const a   = (i / 8) * Math.PI * 2
+    const rib = new THREE.Mesh(new THREE.BoxGeometry(0.10, 4.05, 0.10), mStoneMid)
+    rib.position.set(Math.sin(a)*2.6, 6.22, Math.cos(a)*2.6)
+    rib.rotation.y = -a
+    rib.rotation.z = Math.atan2(2.6, 2.0)
+    scene.add(rib)
+  }
+
+  // Spire
+  add(new THREE.ConeGeometry(0.20, 1.10, 6), mStoneMid, 0, 8.27, 0)
+  add(new THREE.ConeGeometry(0.07, 0.55, 6), mStone,    0, 9.10, 0)
+
+  // Interior lava-tinted lamp
+  const lamp = new THREE.PointLight('#ff6622', 1.8, 12)
+  lamp.position.set(0, 0.5, 0)
+  scene.add(lamp)
+
+  // White studio light inside gazebo — illumina i colori reali del mostro senza tinta
+  // Posizionato a y=3 (dentro il gazebo), range corto per non contaminare l'ambiente
+  const studio = new THREE.PointLight('#ffffff', 8.0, 7)
+  studio.position.set(0, 3.0, 0)
+  scene.add(studio)
+  // Secondo bianco dal basso per bilanciare le ombre
+  const studioLow = new THREE.PointLight('#ffffff', 3.0, 5)
+  studioLow.position.set(0, 0.3, 0)
+  scene.add(studioLow)
+
+  return lamp
+}
+
+function makeMountains(scene) {
+  const mDark = new THREE.MeshLambertMaterial({ color: '#120e08' })
+  const mMid  = new THREE.MeshLambertMaterial({ color: '#1c1610' })
+
+  let seed = 98765
+  const rng = () => { seed = ((seed * 1664525 + 1013904223) | 0) >>> 0; return seed / 0xffffffff }
+
+  const defs = [
+    [-44,-82, 21,40], [-18,-92, 14,30], [14,-88, 18,36],
+    [ 40,-78, 23,42], [ 62,-72, 16,32], [-66,-68, 19,30],
+    [ 30,-100,12,24], [-36,-96, 13,26], [-15,-74, 10,20],
+    [ 52,-90, 15,28], [-54,-56, 11,22], [ 22,-66,  9,18],
+    [  5,-110,  8,16],[  -8,-105, 7,14],
+  ]
+
+  defs.forEach(([x, z, r, h]) => {
+    const mat  = rng() > 0.5 ? mDark : mMid
+    const segs = 6 + Math.floor(rng() * 3)
+    const mesh = new THREE.Mesh(new THREE.ConeGeometry(r, h, segs), mat)
+    mesh.position.set(x, h * 0.5 - 0.8, z)
+    mesh.rotation.y = rng() * Math.PI * 2
+    mesh.castShadow = true
+    scene.add(mesh)
+
+    // Secondary smaller peak offset
+    if (rng() > 0.45) {
+      const r2 = r * 0.55, h2 = h * 0.65
+      const ox = (rng()-0.5)*r*0.8, oz = (rng()-0.5)*r*0.8
+      const m2 = new THREE.Mesh(new THREE.ConeGeometry(r2, h2, segs), mat)
+      m2.position.set(x+ox, h2*0.5-0.8, z+oz)
+      scene.add(m2)
+    }
+
+    // Lava glow at base
+    const gl = new THREE.PointLight('#ff2200', 1.8 + rng()*2.2, 35)
+    gl.position.set(x * 0.88, 0.5, z * 0.88)
+    scene.add(gl)
+  })
+}
+
+function makeParticles(scene) {
+  const COUNT = 600
+  const pos   = new Float32Array(COUNT * 3)
+  const col   = new Float32Array(COUNT * 3)
+  const spd   = new Float32Array(COUNT)
+
+  let seed = 1337
+  const rng = () => { seed = ((seed * 1664525 + 1013904223) | 0) >>> 0; return seed / 0xffffffff }
+
+  for (let i = 0; i < COUNT; i++) {
+    pos[i*3]   = (rng()-0.5)*180
+    pos[i*3+1] = rng() * 22
+    pos[i*3+2] = (rng()-0.5)*180
+    spd[i]     = 0.014 + rng()*0.028
+    // Color: dark smoke (brown/grey) with occasional ember (orange)
+    const ember = rng() > 0.85
+    col[i*3]   = ember ? 0.90 : 0.22 + rng()*0.15
+    col[i*3+1] = ember ? 0.28 : 0.10 + rng()*0.08
+    col[i*3+2] = ember ? 0.0  : 0.04 + rng()*0.04
+  }
+
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  geo.setAttribute('color',    new THREE.BufferAttribute(col, 3))
+
+  const mat = new THREE.PointsMaterial({
+    size: 0.60, vertexColors: true,
+    transparent: true, opacity: 0.32,
+    sizeAttenuation: true, depthWrite: false,
+  })
+
+  const pts = new THREE.Points(geo, mat)
+  pts.userData.speeds = spd
+  scene.add(pts)
+  return pts
+}
+
+// ── Monster mesh helpers ──────────────────────────────────────────────────────
 function makeMesh(part) {
   const c = (v, min = 0.02) => Math.max(min, v || 0)
   let geo
@@ -27,7 +266,7 @@ function makeMesh(part) {
 
 function addOutline(mesh) {
   const edges = new THREE.EdgesGeometry(mesh.geometry)
-  const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xff6600 }))
+  const line  = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xff6600 }))
   line.scale.setScalar(1.06)
   line.userData.isOutline = true
   mesh.add(line)
@@ -38,7 +277,6 @@ function removeOutline(mesh) {
   if (o) { o.geometry.dispose(); o.material.dispose(); mesh.remove(o) }
 }
 
-// Legge le dimensioni finali dalla mesh dopo un'operazione di scale
 function extractDimsFromScale(mesh) {
   const sc = mesh.scale
   if (sc.x === 1 && sc.y === 1 && sc.z === 1) return {}
@@ -47,148 +285,114 @@ function extractDimsFromScale(mesh) {
   const round  = v => Math.max(0.02, parseFloat(v.toFixed(4)))
   let dims = {}
   if (shape === 'box') {
-    dims = { w: round(params.width * sc.x), h: round(params.height * sc.y), d: round(params.depth * sc.z) }
+    dims = { w: round(params.width*sc.x), h: round(params.height*sc.y), d: round(params.depth*sc.z) }
   } else if (shape === 'sphere') {
-    dims = { r: round(params.radius * ((sc.x + sc.y + sc.z) / 3)) }
+    dims = { r: round(params.radius * ((sc.x+sc.y+sc.z)/3)) }
   } else if (shape === 'cylinder') {
-    dims = { r: round(params.radiusTop * ((sc.x + sc.z) / 2)), h: round(params.height * sc.y) }
+    dims = { r: round(params.radiusTop*((sc.x+sc.z)/2)), h: round(params.height*sc.y) }
   } else if (shape === 'cone') {
-    dims = { r: round(params.radius * ((sc.x + sc.z) / 2)), h: round(params.height * sc.y) }
+    dims = { r: round(params.radius*((sc.x+sc.z)/2)), h: round(params.height*sc.y) }
   }
   mesh.scale.set(1, 1, 1)
   return dims
 }
 
-// ── Overlay builders ──────────────────────────────────────────────────────────
-
-// Sfera wireframe 3D — per portate di danno
-function makeSphereOverlay(radius, color, cy = 1.0, opacity = 0.35) {
+// ── Overlay helpers ───────────────────────────────────────────────────────────
+function makeSphereOverlay(radius, color, cy=1.0, opacity=0.35) {
   const geo  = new THREE.SphereGeometry(radius, 20, 12)
   const wire = new THREE.WireframeGeometry(geo)
-  const mesh = new THREE.LineSegments(
-    wire,
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
-  )
+  const mesh = new THREE.LineSegments(wire,
+    new THREE.LineBasicMaterial({ color, transparent:true, opacity, depthWrite:false }))
   mesh.position.y = cy
   geo.dispose()
   return mesh
 }
 
-// Frustum 3D — usa eye point e look_dir dagli anchor points
 function makeFovFrustum(eyePt, lookDir, range, fovH, fovV, color) {
   const fwd = new THREE.Vector3(lookDir.x||0, lookDir.y||0, lookDir.z||1).normalize()
-  const worldUp = Math.abs(fwd.y) > 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0)
+  const worldUp = Math.abs(fwd.y) > 0.9 ? new THREE.Vector3(0,0,1) : new THREE.Vector3(0,1,0)
   const right = new THREE.Vector3().crossVectors(worldUp, fwd).normalize()
   const up    = new THREE.Vector3().crossVectors(fwd, right).normalize()
-
-  const hH  = Math.tan((fovH / 2) * DEG) * range
-  const hV  = Math.tan((fovV / 2) * DEG) * range
+  const hH = Math.tan((fovH/2)*DEG)*range, hV = Math.tan((fovV/2)*DEG)*range
   const eye = new THREE.Vector3(eyePt.x||0, eyePt.y||1.75, eyePt.z||0)
   const tip = eye.clone().addScaledVector(fwd, range)
-
-  const tl = tip.clone().addScaledVector(right, -hH).addScaledVector(up,  hV)
-  const tr = tip.clone().addScaledVector(right,  hH).addScaledVector(up,  hV)
-  const bl = tip.clone().addScaledVector(right, -hH).addScaledVector(up, -hV)
-  const br = tip.clone().addScaledVector(right,  hH).addScaledVector(up, -hV)
-
-  const pts = [
-    eye, tl,  eye, tr,  eye, bl,  eye, br,
-    tl, tr,  tr, br,  br, bl,  bl, tl,
-  ]
+  const tl = tip.clone().addScaledVector(right,-hH).addScaledVector(up, hV)
+  const tr = tip.clone().addScaledVector(right, hH).addScaledVector(up, hV)
+  const bl = tip.clone().addScaledVector(right,-hH).addScaledVector(up,-hV)
+  const br = tip.clone().addScaledVector(right, hH).addScaledVector(up,-hV)
+  const pts = [eye,tl, eye,tr, eye,bl, eye,br, tl,tr, tr,br, br,bl, bl,tl]
   return new THREE.LineSegments(
     new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55, depthWrite: false })
-  )
+    new THREE.LineBasicMaterial({ color, transparent:true, opacity:0.55, depthWrite:false }))
 }
 
-// Sfera 360°: rappresenta il raggio vista quando FOV >= 360°
-function makeSightSphere(range, color, eyePt = { x:0, y:1.5, z:0 }) {
+function makeSightSphere(range, color, eyePt={x:0,y:1.5,z:0}) {
   const geo  = new THREE.SphereGeometry(range, 24, 14)
   const wire = new THREE.WireframeGeometry(geo)
-  const mesh = new THREE.LineSegments(
-    wire,
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.2, depthWrite: false })
-  )
+  const mesh = new THREE.LineSegments(wire,
+    new THREE.LineBasicMaterial({ color, transparent:true, opacity:0.2, depthWrite:false }))
   mesh.position.set(eyePt.x||0, eyePt.y||1.5, eyePt.z||0)
   geo.dispose()
   return mesh
 }
 
-// Piccola sfera solida — marker per anchor points
-function makeAnchorSphere(pos, color, size = 0.07) {
+function makeAnchorSphere(pos, color, size=0.07) {
   const geo  = new THREE.SphereGeometry(size, 10, 8)
-  const mat  = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.85 })
+  const mat  = new THREE.MeshLambertMaterial({ color, transparent:true, opacity:0.85 })
   const mesh = new THREE.Mesh(geo, mat)
   mesh.position.set(pos.x||0, pos.y||0, pos.z||0)
   return mesh
 }
 
-// Linea freccia dalla posizione nella direzione data
 function makeDirectionLine(from, dir, length, color) {
   const start = new THREE.Vector3(from.x||0, from.y||0, from.z||0)
   const fwd   = new THREE.Vector3(dir.x||0, dir.y||0, dir.z||1).normalize()
   const end   = start.clone().addScaledVector(fwd, length)
   return new THREE.LineSegments(
     new THREE.BufferGeometry().setFromPoints([start, end]),
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 })
-  )
+    new THREE.LineBasicMaterial({ color, transparent:true, opacity:0.9 }))
 }
 
 function buildOverlays(stats, geometry) {
   const group = new THREE.Group()
   if (!stats) return group
-  const {
-    sight_range = 10, fov_angle = 90, fov_angle_v = 60,
-    attack_range = 2, attack_type = 'melee', ranged_range = 15,
-  } = stats
-
+  const { sight_range=10, fov_angle=90, fov_angle_v=60, attack_range=2, attack_type='melee', ranged_range=15 } = stats
   const anchors = geometry?.anchors
-  const eyePt   = anchors?.eye      || { x: 0,    y: 1.75, z: 0.24 }
-  const lookDir = anchors?.look_dir || { x: 0,    y: 0,    z: 1    }
-  const firePt  = anchors?.fire     || { x: 0.51, y: 0.97, z: 0.3  }
+  const eyePt   = anchors?.eye      || { x:0, y:1.75, z:0.24 }
+  const lookDir = anchors?.look_dir || { x:0, y:0,    z:1    }
+  const firePt  = anchors?.fire     || { x:0.51, y:0.97, z:0.3 }
 
-  // Frustum visivo (blu) — o sfera se FOV >= 360°
   if (fov_angle >= 359) {
     group.add(makeSightSphere(sight_range, 0x4499ff, eyePt))
   } else {
     group.add(makeFovFrustum(eyePt, lookDir, sight_range, fov_angle, fov_angle_v, 0x4499ff))
   }
-
-  // Sfera danno mischia (arancio)
   group.add(makeSphereOverlay(attack_range, 0xff8800, 1.0, 0.4))
-
-  // Sfera danno distanza (ciano) — solo quando attack_type = 'mixed'
-  if (attack_type === 'mixed' && ranged_range > attack_range) {
+  if (attack_type === 'mixed' && ranged_range > attack_range)
     group.add(makeSphereOverlay(ranged_range, 0x44aadd, 1.0, 0.25))
-  }
 
-  // Gizmo root: assi XYZ all'origine del mostro (local space reference)
   group.add(new THREE.AxesHelper(0.45))
-
-  // Marker anchor: sfera occhio (azzurro) + linea direzione
   group.add(makeAnchorSphere(eyePt, 0x44ddff, 0.06))
   group.add(makeDirectionLine(eyePt, lookDir, 0.5, 0x44ddff))
-
-  // Marker punto di sparo (giallo-arancio) — sempre visibile nell'editor
   group.add(makeAnchorSphere(firePt, 0xffaa00, 0.07))
-
   return group
 }
 
+// ── Component ─────────────────────────────────────────────────────────────────
 export default function MonsterViewer({
   geometry, onThumbnailCapture,
   selectedPartId, onPartSelect, onPartTransform,
-  transformMode = 'translate', transformSpace = 'world',
-  stats = null, showOverlays = true,
+  transformMode='translate', transformSpace='world',
+  stats=null, showOverlays=true,
 }) {
-  const mountRef          = useRef(null)
-  const ctx               = useRef({})
-  const meshMapRef        = useRef({})
+  const mountRef           = useRef(null)
+  const ctx                = useRef({})
+  const meshMapRef         = useRef({})
   const onPartSelectRef    = useRef(onPartSelect)
   const onPartTransformRef = useRef(onPartTransform)
   const selectedPartIdRef  = useRef(selectedPartId)
   const showOverlaysRef    = useRef(showOverlays)
-  useEffect(() => { onPartSelectRef.current   = onPartSelect   }, [onPartSelect])
+  useEffect(() => { onPartSelectRef.current    = onPartSelect    }, [onPartSelect])
   useEffect(() => { onPartTransformRef.current = onPartTransform }, [onPartTransform])
   useEffect(() => { selectedPartIdRef.current  = selectedPartId  }, [selectedPartId])
   useEffect(() => {
@@ -207,41 +411,67 @@ export default function MonsterViewer({
     renderer.setSize(W, H)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.shadowMap.enabled = true
+    renderer.shadowMap.type    = THREE.PCFSoftShadowMap
     el.appendChild(renderer.domElement)
     const canvas = renderer.domElement
 
     // Scene
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color('#3a7aaa')
-    scene.fog = new THREE.Fog('#3a7aaa', 120, 400)
-    const camera = new THREE.PerspectiveCamera(45, W / H, 0.01, 2000)
+    scene.background = new THREE.Color('#0d0500')
+    scene.fog = new THREE.FogExp2('#0d0500', 0.013)
 
-    scene.add(new THREE.AmbientLight('#aaccee', 1.2))
-    const sun = new THREE.DirectionalLight('#ffffff', 2.0)
-    sun.position.set(5, 10, 6); sun.castShadow = true; scene.add(sun)
-    const fill = new THREE.DirectionalLight('#ffddaa', 0.5)
-    fill.position.set(-4, 3, -3); scene.add(fill)
+    const camera = new THREE.PerspectiveCamera(45, W/H, 0.01, 2000)
 
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshLambertMaterial({ color: '#2d6a2d' }))
-    floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor)
-    scene.add(new THREE.GridHelper(400, 80, '#1a4a1a', '#1a4a1a'))
+    // ── Lighting ──────────────────────────────────────────────────────────────
+    // Ambient — hellish warmth, enough to see geometry
+    scene.add(new THREE.AmbientLight('#331200', 2.2))
 
+    // Primary lava glow from below (center)
+    const lavaGlow = new THREE.PointLight('#ff4400', 6.0, 35)
+    lavaGlow.position.set(0, -0.3, 0)
+    scene.add(lavaGlow)
+
+    // Surrounding lava pool lights
+    ;[[-22,0,20],[22,0,20],[-18,0,-22],[20,0,-20]].forEach(([x,y,z]) => {
+      const l = new THREE.PointLight('#ff3300', 3.5, 55)
+      l.position.set(x, y, z); scene.add(l)
+    })
+
+    // Key directional from side (orange)
+    const keyLight = new THREE.DirectionalLight('#ff8844', 2.5)
+    keyLight.position.set(8, 14, 6)
+    keyLight.castShadow = true
+    keyLight.shadow.mapSize.set(1024, 1024)
+    scene.add(keyLight)
+
+    // Secondary fill from front-left
+    const fillLight = new THREE.DirectionalLight('#cc4400', 1.2)
+    fillLight.position.set(-5, 8, 8); scene.add(fillLight)
+
+    // Rim light (deep red from behind)
+    const rimLight = new THREE.DirectionalLight('#cc1800', 1.2)
+    rimLight.position.set(-6, 8, -12); scene.add(rimLight)
+
+    // ── Environment ───────────────────────────────────────────────────────────
+    const lavaMat  = makeLava(scene)
+    const gazeLamp = makeGazebo(scene)
+    makeMountains(scene)
+    const particles = makeParticles(scene)
+
+    // Monster group
     const group = new THREE.Group()
     scene.add(group)
 
     const overlayGroup = new THREE.Group()
     scene.add(overlayGroup)
 
-    // ── TransformControls ───────────────────────────────────────────────────
+    // ── TransformControls ─────────────────────────────────────────────────────
     const tc = new TransformControls(camera, canvas)
     tc.space = 'world'
     tc.mode  = 'translate'
     scene.add(tc)
 
-    // Orbit lock mentre si usa il gizmo
     tc.addEventListener('dragging-changed', e => { orbit.locked = Boolean(e.value) })
-
-    // Commit transform al rilascio del gizmo
     tc.addEventListener('mouseUp', () => {
       const mesh = tc.object
       if (!mesh || !onPartTransformRef.current) return
@@ -251,68 +481,84 @@ export default function MonsterViewer({
       const round2 = v => parseFloat(v.toFixed(4))
       const update = {
         x: round2(p.x), y: round2(p.y), z: round2(p.z),
-        rx: round2(rot.x * RAD), ry: round2(rot.y * RAD), rz: round2(rot.z * RAD),
+        rx: round2(rot.x*RAD), ry: round2(rot.y*RAD), rz: round2(rot.z*RAD),
         ...extractDimsFromScale(mesh),
       }
       onPartTransformRef.current(partId, update)
     })
 
-    // ── Orbit ───────────────────────────────────────────────────────────────
-    const orbit = { theta: THUMB.theta, phi: THUMB.phi, r: THUMB.r, dragging: false, lx: 0, ly: 0, sx: 0, sy: 0, locked: false }
+    // ── Orbit ─────────────────────────────────────────────────────────────────
+    const orbit = { theta: THUMB.theta, phi: THUMB.phi, r: THUMB.r, dragging: false, lx:0, ly:0, sx:0, sy:0, locked: false }
 
-    const handleMouseDown = e => {
-      orbit.dragging = true
-      orbit.lx = e.clientX; orbit.ly = e.clientY
-      orbit.sx = e.clientX; orbit.sy = e.clientY
-    }
+    const handleMouseDown = e => { orbit.dragging=true; orbit.lx=e.clientX; orbit.ly=e.clientY; orbit.sx=e.clientX; orbit.sy=e.clientY }
     const handleMouseMove = e => {
       if (!orbit.dragging || orbit.locked) return
-      orbit.theta -= (e.clientX - orbit.lx) * 0.008
-      orbit.phi    = Math.max(0.04, Math.min(1.45, orbit.phi + (e.clientY - orbit.ly) * 0.008))
-      orbit.lx = e.clientX; orbit.ly = e.clientY
+      orbit.theta -= (e.clientX-orbit.lx)*0.008
+      orbit.phi    = Math.max(0.04, Math.min(1.45, orbit.phi+(e.clientY-orbit.ly)*0.008))
+      orbit.lx=e.clientX; orbit.ly=e.clientY
     }
     const handleMouseUp = e => {
-      const wasDragging = orbit.dragging
       orbit.dragging = false
-      if (orbit.locked) return  // il gizmo stava gestendo questo evento
-      if (!onPartSelectRef.current) return
-      const dist = Math.hypot(e.clientX - orbit.sx, e.clientY - orbit.sy)
+      if (orbit.locked || !onPartSelectRef.current) return
+      const dist = Math.hypot(e.clientX-orbit.sx, e.clientY-orbit.sy)
       if (dist > 20) return
-
       camera.updateMatrixWorld()
-      const rect = canvas.getBoundingClientRect()
+      const rect  = canvas.getBoundingClientRect()
       const mouse = new THREE.Vector2(
-        ((e.clientX - rect.left) / rect.width)  *  2 - 1,
-        -((e.clientY - rect.top) / rect.height) *  2 + 1
+        ((e.clientX-rect.left)/rect.width)*2-1,
+        -((e.clientY-rect.top)/rect.height)*2+1,
       )
-      const raycaster = new THREE.Raycaster()
-      raycaster.setFromCamera(mouse, camera)
-      const meshes = group.children.filter(c => c.isMesh)
-      const hits = raycaster.intersectObjects(meshes, false)
+      const ray = new THREE.Raycaster()
+      ray.setFromCamera(mouse, camera)
+      const hits = ray.intersectObjects(group.children.filter(c => c.isMesh), false)
       if (hits.length > 0) {
         const partId = hits[0].object.userData.partId
         if (partId) onPartSelectRef.current(partId)
       }
     }
-    const handleWheel      = e => { orbit.r = Math.max(1.2, Math.min(200, orbit.r * (1 + e.deltaY * 0.001))) }
+    const handleWheel      = e => { orbit.r = Math.max(1.2, Math.min(200, orbit.r*(1+e.deltaY*0.001))) }
     const handleMouseLeave = () => { orbit.dragging = false }
 
     canvas.addEventListener('mousedown',  handleMouseDown)
     canvas.addEventListener('mousemove',  handleMouseMove)
     canvas.addEventListener('mouseup',    handleMouseUp)
-    canvas.addEventListener('wheel',      handleWheel,      { passive: true })
+    canvas.addEventListener('wheel',      handleWheel, { passive: true })
     canvas.addEventListener('mouseleave', handleMouseLeave)
 
-    // ── Render loop ──────────────────────────────────────────────────────────
+    // ── Render loop ───────────────────────────────────────────────────────────
     let raf
     const animate = () => {
       raf = requestAnimationFrame(animate)
+      const t = performance.now() / 1000
+
+      // Lava animation
+      lavaMat.uniforms.time.value = t
+
+      // Lava glow flicker
+      lavaGlow.intensity = 4.5 + Math.sin(t*4.1)*0.8 + Math.sin(t*7.3)*0.35
+      gazeLamp.intensity = 1.5 + Math.sin(t*3.7)*0.5 + Math.sin(t*5.9)*0.2
+
+      // Smoke / ember particles rise
+      const ppos = particles.geometry.attributes.position
+      const spd  = particles.userData.speeds
+      for (let i = 0; i < ppos.count; i++) {
+        const ny = ppos.getY(i) + spd[i]
+        if (ny > 24) {
+          ppos.setY(i, 0)
+          ppos.setX(i, (Math.random()-0.5)*180)
+          ppos.setZ(i, (Math.random()-0.5)*180)
+        } else {
+          ppos.setY(i, ny)
+        }
+      }
+      ppos.needsUpdate = true
+
       camera.position.set(
         orbit.r * Math.sin(orbit.theta) * Math.cos(orbit.phi),
         orbit.r * Math.sin(orbit.phi),
-        orbit.r * Math.cos(orbit.theta) * Math.cos(orbit.phi)
+        orbit.r * Math.cos(orbit.theta) * Math.cos(orbit.phi),
       )
-      camera.lookAt(0, 0.9, 0)
+      camera.lookAt(0, 1.2, 0)
       renderer.render(scene, camera)
     }
     animate()
@@ -327,7 +573,7 @@ export default function MonsterViewer({
     window.addEventListener('resize', onResize)
     requestAnimationFrame(onResize)
 
-    ctx.current = { renderer, scene, camera, group, overlayGroup, orbit, tc, el }
+    ctx.current = { renderer, scene, camera, group, overlayGroup, orbit, tc, el, lavaMat, particles }
 
     return () => {
       cancelAnimationFrame(raf)
@@ -357,10 +603,8 @@ export default function MonsterViewer({
   useEffect(() => {
     const { group, renderer, scene, camera, el } = ctx.current
     if (!group) return
-
     group.children.slice().forEach(c => { c.geometry?.dispose(); c.material?.dispose(); group.remove(c) })
     meshMapRef.current = {}
-
     if (geometry?.parts?.length) {
       geometry.parts.forEach(part => {
         const mesh = makeMesh(part)
@@ -368,29 +612,26 @@ export default function MonsterViewer({
         meshMapRef.current[part.id] = mesh
       })
     }
-
     if (onThumbnailCapture) {
       setTimeout(() => {
         if (!renderer || !el) return
         const { overlayGroup } = ctx.current
         const W = el.clientWidth, H = el.clientHeight
         const savedPos = camera.position.clone(), savedAspect = camera.aspect
-        // Nascondi outline e overlay per thumbnail pulita
         const selId = selectedPartIdRef.current
         const selMesh = selId ? meshMapRef.current[selId] : null
         if (selMesh) removeOutline(selMesh)
         if (overlayGroup) overlayGroup.visible = false
-        camera.aspect = 160 / 120; camera.updateProjectionMatrix()
+        camera.aspect = 160/120; camera.updateProjectionMatrix()
         camera.position.set(
-          THUMB.r * Math.sin(THUMB.theta) * Math.cos(THUMB.phi),
-          THUMB.r * Math.sin(THUMB.phi),
-          THUMB.r * Math.cos(THUMB.theta) * Math.cos(THUMB.phi)
+          THUMB.r*Math.sin(THUMB.theta)*Math.cos(THUMB.phi),
+          THUMB.r*Math.sin(THUMB.phi),
+          THUMB.r*Math.cos(THUMB.theta)*Math.cos(THUMB.phi),
         )
         camera.lookAt(0, 0.9, 0)
         renderer.setSize(160, 120, false)
         renderer.render(scene, camera)
         const src = renderer.domElement.toDataURL('image/jpeg', 0.85)
-        // Ripristina outline, overlay e viewport
         if (selMesh) addOutline(selMesh)
         if (overlayGroup) overlayGroup.visible = showOverlaysRef.current
         renderer.setSize(W, H, false)
@@ -400,7 +641,7 @@ export default function MonsterViewer({
     }
   }, [geometry, onThumbnailCapture])
 
-  // ── Rebuild stat overlays (FOV cone, melee/ranged range circles, anchor markers) ──
+  // ── Rebuild stat overlays ───────────────────────────────────────────────────
   useEffect(() => {
     const { overlayGroup } = ctx.current
     if (!overlayGroup) return
@@ -409,12 +650,11 @@ export default function MonsterViewer({
     built.children.slice().forEach(c => { overlayGroup.add(c) })
   }, [stats, geometry])
 
-  // ── Selezione highlight + attach TransformControls ──────────────────────────
+  // ── Selection highlight + TransformControls attach ──────────────────────────
   useEffect(() => {
     const { tc } = ctx.current
     const map = meshMapRef.current
     Object.values(map).forEach(mesh => removeOutline(mesh))
-
     if (selectedPartId && map[selectedPartId]) {
       addOutline(map[selectedPartId])
       if (tc) tc.attach(map[selectedPartId])
@@ -423,5 +663,5 @@ export default function MonsterViewer({
     }
   }, [selectedPartId, geometry])
 
-  return <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
+  return <div ref={mountRef} style={{ width:'100%', height:'100%' }} />
 }
