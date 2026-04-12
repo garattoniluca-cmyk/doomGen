@@ -79,7 +79,7 @@ const DEFAULT_STATE = () => ({
   // movimento
   move_type: 'walk', speed: 5, rotate_speed: 90, hover_height: 1.5,
   // visuale
-  sight_range: 10, fov_angle: 90,
+  sight_range: 10, fov_angle: 90, fov_angle_v: 60,
   // vita
   health: 100, hp_regen: 0, hp_regen_rate: 0,
   // attacco
@@ -255,7 +255,7 @@ export default function MonsterEditor() {
     undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
     const s = { id:m.id, name:m.name,
       move_type: m.move_type||'walk', speed:m.speed??5, rotate_speed:m.rotate_speed??90, hover_height:m.hover_height??1.5,
-      sight_range:m.sight_range??10, fov_angle:m.fov_angle??90,
+      sight_range:m.sight_range??10, fov_angle:m.fov_angle??90, fov_angle_v:m.fov_angle_v??60,
       health:m.health??100, hp_regen:m.hp_regen??0, hp_regen_rate:m.hp_regen_rate??0,
       attack_type:m.attack_type||'melee',
       attack_range:m.attack_range??2, damage:m.damage??20, melee_rate:m.melee_rate??1,
@@ -298,7 +298,7 @@ export default function MonsterEditor() {
         body: JSON.stringify({
           name:editing.name,
           move_type:editing.move_type, speed:editing.speed, rotate_speed:editing.rotate_speed, hover_height:editing.hover_height,
-          sight_range:editing.sight_range, fov_angle:editing.fov_angle,
+          sight_range:editing.sight_range, fov_angle:editing.fov_angle, fov_angle_v:editing.fov_angle_v,
           health:editing.health, hp_regen:editing.hp_regen, hp_regen_rate:editing.hp_regen_rate,
           attack_type:editing.attack_type,
           attack_range:editing.attack_range, damage:editing.damage, melee_rate:editing.melee_rate,
@@ -336,7 +336,7 @@ export default function MonsterEditor() {
       id: null,
       name: m.name + ' (copia)',
       move_type: m.move_type||'walk', speed: m.speed??5, rotate_speed: m.rotate_speed??90, hover_height: m.hover_height??1.5,
-      sight_range: m.sight_range??10, fov_angle: m.fov_angle??90,
+      sight_range: m.sight_range??10, fov_angle: m.fov_angle??90, fov_angle_v: m.fov_angle_v??60,
       health: m.health??100, hp_regen: m.hp_regen??0, hp_regen_rate: m.hp_regen_rate??0,
       attack_type: m.attack_type||'melee',
       attack_range: m.attack_range??2, damage: m.damage??20, melee_rate: m.melee_rate??1,
@@ -782,8 +782,10 @@ function StatsTab({ editing, set }) {
       <StatSection title="VISUALE">
         <Slider label="RAGGIO VISTA" value={editing.sight_range} min={1} max={50}
           color='#4499ff' unit={`${editing.sight_range}m`} onChange={v=>set('sight_range',v)} />
-        <Slider label="ANGOLO FOV" value={editing.fov_angle} min={10} max={360}
+        <Slider label="FOV ORIZZONTALE" value={editing.fov_angle} min={10} max={360}
           color='#2277cc' unit={`${editing.fov_angle}°`} onChange={v=>set('fov_angle',v)} />
+        <Slider label="FOV VERTICALE" value={editing.fov_angle_v} min={10} max={180}
+          color='#1155aa' unit={`${editing.fov_angle_v}°`} onChange={v=>set('fov_angle_v',v)} />
       </StatSection>
 
       {/* ── VITA ── */}

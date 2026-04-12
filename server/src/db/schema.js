@@ -90,6 +90,7 @@ export async function initDB() {
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS ranged_damage FLOAT NOT NULL DEFAULT 15`)
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS ranged_rate FLOAT NOT NULL DEFAULT 0.5`)
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS hover_height FLOAT NOT NULL DEFAULT 1.5`)
+    await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS fov_angle_v FLOAT NOT NULL DEFAULT 60`)
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS active TINYINT NOT NULL DEFAULT 1`)
     await conn.query(`ALTER TABLE surfaces ADD COLUMN IF NOT EXISTS active TINYINT NOT NULL DEFAULT 1`)
     await conn.query(`ALTER TABLE levels   ADD COLUMN IF NOT EXISTS active TINYINT NOT NULL DEFAULT 1`)

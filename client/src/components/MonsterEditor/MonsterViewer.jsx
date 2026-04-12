@@ -60,52 +60,74 @@ function extractDimsFromScale(mesh) {
 }
 
 // ── Overlay builders ──────────────────────────────────────────────────────────
-function makeCircleLine(radius, color, y = 0.05, segments = 64) {
-  const pts = []
-  for (let i = 0; i <= segments; i++) {
-    const a = (i / segments) * Math.PI * 2
-    pts.push(new THREE.Vector3(Math.cos(a) * radius, y, Math.sin(a) * radius))
-  }
-  return new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.75, depthWrite: false })
+
+// Sfera wireframe 3D — per portate di danno
+function makeSphereOverlay(radius, color, cy = 1.0, opacity = 0.35) {
+  const geo  = new THREE.SphereGeometry(radius, 20, 12)
+  const wire = new THREE.WireframeGeometry(geo)
+  const mesh = new THREE.LineSegments(
+    wire,
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false })
   )
+  mesh.position.y = cy
+  geo.dispose()
+  return mesh
 }
 
-function makeFovSector(radius, fovDeg, color, y = 0.05) {
-  const half = (fovDeg / 2) * DEG
-  const segs = Math.max(8, Math.round(fovDeg / 2))
-  const pts  = [new THREE.Vector3(0, y, 0)]
-  for (let i = 0; i <= segs; i++) {
-    const a = -half + (i / segs) * fovDeg * DEG
-    pts.push(new THREE.Vector3(Math.sin(a) * radius, y, -Math.cos(a) * radius))
-  }
-  pts.push(new THREE.Vector3(0, y, 0))
-  return new THREE.Line(
+// Frustum 3D — per il campo visivo
+function makeFovFrustum(range, fovH, fovV, color, eyeY = 1.5) {
+  const hH = Math.tan((fovH / 2) * DEG) * range
+  const hV = Math.tan((fovV / 2) * DEG) * range
+  const O  = new THREE.Vector3(0, eyeY, 0)
+  const tl = new THREE.Vector3(-hH, eyeY + hV, -range)
+  const tr = new THREE.Vector3( hH, eyeY + hV, -range)
+  const bl = new THREE.Vector3(-hH, eyeY - hV, -range)
+  const br = new THREE.Vector3( hH, eyeY - hV, -range)
+  // 4 raggi dall'origine + rettangolo del piano lontano
+  const pts = [
+    O, tl,  O, tr,  O, bl,  O, br,
+    tl, tr,  tr, br,  br, bl,  bl, tl,
+  ]
+  return new THREE.LineSegments(
     new THREE.BufferGeometry().setFromPoints(pts),
     new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55, depthWrite: false })
   )
 }
 
+// Frustum a 360°: solo sfera wireframe che rappresenta il raggio vista
+function makeSightSphere(range, color, eyeY = 1.5) {
+  const geo  = new THREE.SphereGeometry(range, 24, 14)
+  const wire = new THREE.WireframeGeometry(geo)
+  const mesh = new THREE.LineSegments(
+    wire,
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.2, depthWrite: false })
+  )
+  mesh.position.y = eyeY
+  geo.dispose()
+  return mesh
+}
+
 function buildOverlays(stats) {
   const group = new THREE.Group()
   if (!stats) return group
-  const { sight_range = 10, fov_angle = 90, attack_range = 2,
-          attack_type = 'melee', ranged_range = 15 } = stats
+  const {
+    sight_range = 10, fov_angle = 90, fov_angle_v = 60,
+    attack_range = 2, attack_type = 'melee', ranged_range = 15,
+  } = stats
 
-  // FOV / sight range (blue)
+  // Frustum visivo (blu) — o sfera se FOV >= 360°
   if (fov_angle >= 359) {
-    group.add(makeCircleLine(sight_range, 0x4499ff))
+    group.add(makeSightSphere(sight_range, 0x4499ff))
   } else {
-    group.add(makeFovSector(sight_range, fov_angle, 0x4499ff))
+    group.add(makeFovFrustum(sight_range, fov_angle, fov_angle_v, 0x4499ff))
   }
 
-  // Melee range (orange)
-  group.add(makeCircleLine(attack_range, 0xff8800, 0.06))
+  // Sfera danno mischia (arancio)
+  group.add(makeSphereOverlay(attack_range, 0xff8800, 1.0, 0.4))
 
-  // Ranged range (cyan, only when mixed and larger)
+  // Sfera danno distanza (ciano) — solo quando attack_type = 'mixed'
   if (attack_type === 'mixed' && ranged_range > attack_range) {
-    group.add(makeCircleLine(ranged_range, 0x44aadd, 0.07))
+    group.add(makeSphereOverlay(ranged_range, 0x44aadd, 1.0, 0.25))
   }
 
   return group

@@ -29,6 +29,7 @@ router.get('/', requireAuth, async (req, res) => {
       move_type:     r.move_type || 'walk',
       rotate_speed:  r.rotate_speed ?? 90,
       fov_angle:     r.fov_angle ?? 90,
+      fov_angle_v:   r.fov_angle_v ?? 60,
       hp_regen:      r.hp_regen ?? 0,
       hp_regen_rate: r.hp_regen_rate ?? 0,
       attack_type:   r.attack_type || 'melee',
@@ -59,6 +60,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       move_type:     row.move_type || 'walk',
       rotate_speed:  row.rotate_speed ?? 90,
       fov_angle:     row.fov_angle ?? 90,
+      fov_angle_v:   row.fov_angle_v ?? 60,
       hp_regen:      row.hp_regen ?? 0,
       hp_regen_rate: row.hp_regen_rate ?? 0,
       attack_type:   row.attack_type || 'melee',
@@ -77,7 +79,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   const { name, health, speed, damage, behavior, sight_range, attack_range,
           resistances, geometry, sounds, thumbnail, lore,
-          move_type, rotate_speed, fov_angle, hp_regen, hp_regen_rate,
+          move_type, rotate_speed, fov_angle, fov_angle_v, hp_regen, hp_regen_rate,
           attack_type, melee_rate, ranged_range, ranged_damage, ranged_rate,
           hover_height } = req.body
   try {
@@ -85,10 +87,10 @@ router.post('/', requireAuth, async (req, res) => {
       `INSERT INTO monsters
          (user_id, name, health, speed, damage, behavior, sight_range, attack_range,
           resistances, geometry, sounds, thumbnail, lore,
-          move_type, rotate_speed, fov_angle, hp_regen, hp_regen_rate,
+          move_type, rotate_speed, fov_angle, fov_angle_v, hp_regen, hp_regen_rate,
           attack_type, melee_rate, ranged_range, ranged_damage, ranged_rate,
           hover_height)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [req.user.id, name||'Senza nome',
        health||100, speed||5, damage||20, behavior||'patrol',
        sight_range||10, attack_range||2,
@@ -96,7 +98,7 @@ router.post('/', requireAuth, async (req, res) => {
        JSON.stringify(geometry||null),
        JSON.stringify(sounds||null),
        thumbnail||null, lore||null,
-       move_type||'walk', rotate_speed??90, fov_angle??90,
+       move_type||'walk', rotate_speed??90, fov_angle??90, fov_angle_v??60,
        hp_regen??0, hp_regen_rate??0,
        attack_type||'melee', melee_rate??1,
        ranged_range??15, ranged_damage??15, ranged_rate??0.5,
@@ -112,7 +114,7 @@ router.post('/', requireAuth, async (req, res) => {
 router.put('/:id', requireAuth, async (req, res) => {
   const { name, health, speed, damage, behavior, sight_range, attack_range,
           resistances, geometry, sounds, thumbnail, lore,
-          move_type, rotate_speed, fov_angle, hp_regen, hp_regen_rate,
+          move_type, rotate_speed, fov_angle, fov_angle_v, hp_regen, hp_regen_rate,
           attack_type, melee_rate, ranged_range, ranged_damage, ranged_rate,
           hover_height } = req.body
   try {
@@ -121,7 +123,7 @@ router.put('/:id', requireAuth, async (req, res) => {
          name=?, health=?, speed=?, damage=?, behavior=?,
          sight_range=?, attack_range=?,
          resistances=?, geometry=?, sounds=?, thumbnail=?, lore=?,
-         move_type=?, rotate_speed=?, fov_angle=?, hp_regen=?, hp_regen_rate=?,
+         move_type=?, rotate_speed=?, fov_angle=?, fov_angle_v=?, hp_regen=?, hp_regen_rate=?,
          attack_type=?, melee_rate=?, ranged_range=?, ranged_damage=?, ranged_rate=?,
          hover_height=?
        WHERE id=? AND user_id=?`,
@@ -132,7 +134,7 @@ router.put('/:id', requireAuth, async (req, res) => {
        JSON.stringify(geometry||null),
        JSON.stringify(sounds||null),
        thumbnail||null, lore||null,
-       move_type||'walk', rotate_speed??90, fov_angle??90,
+       move_type||'walk', rotate_speed??90, fov_angle??90, fov_angle_v??60,
        hp_regen??0, hp_regen_rate??0,
        attack_type||'melee', melee_rate??1,
        ranged_range??15, ranged_damage??15, ranged_rate??0.5,
