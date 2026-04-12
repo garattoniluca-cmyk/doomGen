@@ -1,8 +1,10 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js'
 
-// Fixed thumbnail camera params (always the same angle)
 const THUMB = { theta: 0.5, phi: 0.32, r: 4.5 }
+const DEG = Math.PI / 180
+const RAD = 180 / Math.PI
 
 function makeMesh(part) {
   const c = (v, min = 0.02) => Math.max(min, v || 0)
@@ -16,88 +18,164 @@ function makeMesh(part) {
   const mat  = new THREE.MeshLambertMaterial({ color: part.color || '#cc2200' })
   const mesh = new THREE.Mesh(geo, mat)
   mesh.position.set(part.x || 0, part.y || 0, part.z || 0)
-  mesh.rotation.set(
-    ((part.rx || 0) * Math.PI) / 180,
-    ((part.ry || 0) * Math.PI) / 180,
-    ((part.rz || 0) * Math.PI) / 180
-  )
+  mesh.rotation.set((part.rx||0)*DEG, (part.ry||0)*DEG, (part.rz||0)*DEG)
   mesh.castShadow = true
   mesh.userData.partId = part.id
+  mesh.userData.shape  = part.shape || 'box'
   return mesh
 }
 
 function addOutline(mesh) {
   const edges = new THREE.EdgesGeometry(mesh.geometry)
-  const line = new THREE.LineSegments(
-    edges,
-    new THREE.LineBasicMaterial({ color: 0xff6600, linewidth: 1 })
-  )
+  const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xff6600 }))
   line.scale.setScalar(1.06)
   line.userData.isOutline = true
   mesh.add(line)
 }
 
 function removeOutline(mesh) {
-  const outline = mesh.children.find(c => c.userData.isOutline)
-  if (outline) {
-    outline.geometry.dispose()
-    outline.material.dispose()
-    mesh.remove(outline)
-  }
+  const o = mesh.children.find(c => c.userData.isOutline)
+  if (o) { o.geometry.dispose(); o.material.dispose(); mesh.remove(o) }
 }
 
-export default function MonsterViewer({ geometry, onThumbnailCapture, selectedPartId, onPartSelect }) {
-  const mountRef  = useRef(null)
-  const ctx       = useRef({})
-  const meshMapRef = useRef({})  // partId → mesh
+// Legge le dimensioni finali dalla mesh dopo un'operazione di scale
+function extractDimsFromScale(mesh) {
+  const sc = mesh.scale
+  if (sc.x === 1 && sc.y === 1 && sc.z === 1) return {}
+  const shape  = mesh.userData.shape
+  const params = mesh.geometry.parameters
+  const round  = v => Math.max(0.02, parseFloat(v.toFixed(4)))
+  let dims = {}
+  if (shape === 'box') {
+    dims = { w: round(params.width * sc.x), h: round(params.height * sc.y), d: round(params.depth * sc.z) }
+  } else if (shape === 'sphere') {
+    dims = { r: round(params.radius * ((sc.x + sc.y + sc.z) / 3)) }
+  } else if (shape === 'cylinder') {
+    dims = { r: round(params.radiusTop * ((sc.x + sc.z) / 2)), h: round(params.height * sc.y) }
+  } else if (shape === 'cone') {
+    dims = { r: round(params.radius * ((sc.x + sc.z) / 2)), h: round(params.height * sc.y) }
+  }
+  mesh.scale.set(1, 1, 1)
+  return dims
+}
 
+export default function MonsterViewer({
+  geometry, onThumbnailCapture,
+  selectedPartId, onPartSelect, onPartTransform,
+  transformMode = 'translate', transformSpace = 'world',
+}) {
+  const mountRef          = useRef(null)
+  const ctx               = useRef({})
+  const meshMapRef        = useRef({})
+  const onPartSelectRef   = useRef(onPartSelect)
+  const onPartTransformRef = useRef(onPartTransform)
+  useEffect(() => { onPartSelectRef.current   = onPartSelect   }, [onPartSelect])
+  useEffect(() => { onPartTransformRef.current = onPartTransform }, [onPartTransform])
+
+  // ── Main setup ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const el = mountRef.current
-    const W = el.clientWidth || 600
-    const H = el.clientHeight || 400
+    const W  = el.clientWidth  || 600
+    const H  = el.clientHeight || 400
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
     renderer.setSize(W, H)
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.shadowMap.enabled = true
     el.appendChild(renderer.domElement)
+    const canvas = renderer.domElement
 
-    // ── Scene ──
+    // Scene
     const scene = new THREE.Scene()
     scene.background = new THREE.Color('#3a7aaa')
     scene.fog = new THREE.Fog('#3a7aaa', 18, 40)
-
     const camera = new THREE.PerspectiveCamera(45, W / H, 0.01, 200)
 
-    // ── Lights ──
     scene.add(new THREE.AmbientLight('#aaccee', 1.2))
     const sun = new THREE.DirectionalLight('#ffffff', 2.0)
-    sun.position.set(5, 10, 6)
-    sun.castShadow = true
-    scene.add(sun)
+    sun.position.set(5, 10, 6); sun.castShadow = true; scene.add(sun)
     const fill = new THREE.DirectionalLight('#ffddaa', 0.5)
-    fill.position.set(-4, 3, -3)
-    scene.add(fill)
+    fill.position.set(-4, 3, -3); scene.add(fill)
 
-    // ── Floor ──
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(30, 30),
-      new THREE.MeshLambertMaterial({ color: '#2d6a2d' })
-    )
-    floor.rotation.x = -Math.PI / 2
-    floor.receiveShadow = true
-    scene.add(floor)
-
-    // ── Grid ──
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshLambertMaterial({ color: '#2d6a2d' }))
+    floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor)
     scene.add(new THREE.GridHelper(30, 30, '#1a4a1a', '#1a4a1a'))
 
-    // ── Monster group ──
     const group = new THREE.Group()
     scene.add(group)
 
-    // ── Orbit state ──
-    const orbit = { theta: THUMB.theta, phi: THUMB.phi, r: THUMB.r, dragging: false, lx: 0, ly: 0, moved: false }
+    // ── TransformControls ───────────────────────────────────────────────────
+    const tc = new TransformControls(camera, canvas)
+    tc.space = 'world'
+    tc.mode  = 'translate'
+    scene.add(tc)
 
+    // Orbit lock mentre si usa il gizmo
+    tc.addEventListener('dragging-changed', e => { orbit.locked = Boolean(e.value) })
+
+    // Commit transform al rilascio del gizmo
+    tc.addEventListener('mouseUp', () => {
+      const mesh = tc.object
+      if (!mesh || !onPartTransformRef.current) return
+      const partId = mesh.userData.partId
+      if (!partId) return
+      const p = mesh.position, rot = mesh.rotation
+      const round2 = v => parseFloat(v.toFixed(4))
+      const update = {
+        x: round2(p.x), y: round2(p.y), z: round2(p.z),
+        rx: round2(rot.x * RAD), ry: round2(rot.y * RAD), rz: round2(rot.z * RAD),
+        ...extractDimsFromScale(mesh),
+      }
+      onPartTransformRef.current(partId, update)
+    })
+
+    // ── Orbit ───────────────────────────────────────────────────────────────
+    const orbit = { theta: THUMB.theta, phi: THUMB.phi, r: THUMB.r, dragging: false, lx: 0, ly: 0, sx: 0, sy: 0, locked: false }
+
+    const handleMouseDown = e => {
+      orbit.dragging = true
+      orbit.lx = e.clientX; orbit.ly = e.clientY
+      orbit.sx = e.clientX; orbit.sy = e.clientY
+    }
+    const handleMouseMove = e => {
+      if (!orbit.dragging || orbit.locked) return
+      orbit.theta -= (e.clientX - orbit.lx) * 0.008
+      orbit.phi    = Math.max(0.04, Math.min(1.45, orbit.phi + (e.clientY - orbit.ly) * 0.008))
+      orbit.lx = e.clientX; orbit.ly = e.clientY
+    }
+    const handleMouseUp = e => {
+      const wasDragging = orbit.dragging
+      orbit.dragging = false
+      if (orbit.locked) return  // il gizmo stava gestendo questo evento
+      if (!onPartSelectRef.current) return
+      const dist = Math.hypot(e.clientX - orbit.sx, e.clientY - orbit.sy)
+      if (dist > 20) return
+
+      camera.updateMatrixWorld()
+      const rect = canvas.getBoundingClientRect()
+      const mouse = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width)  *  2 - 1,
+        -((e.clientY - rect.top) / rect.height) *  2 + 1
+      )
+      const raycaster = new THREE.Raycaster()
+      raycaster.setFromCamera(mouse, camera)
+      const meshes = group.children.filter(c => c.isMesh)
+      const hits = raycaster.intersectObjects(meshes, false)
+      if (hits.length > 0) {
+        const partId = hits[0].object.userData.partId
+        if (partId) onPartSelectRef.current(partId)
+      }
+    }
+    const handleWheel      = e => { orbit.r = Math.max(1.2, Math.min(12, orbit.r + e.deltaY * 0.005)) }
+    const handleMouseLeave = () => { orbit.dragging = false }
+
+    canvas.addEventListener('mousedown',  handleMouseDown)
+    canvas.addEventListener('mousemove',  handleMouseMove)
+    canvas.addEventListener('mouseup',    handleMouseUp)
+    canvas.addEventListener('wheel',      handleWheel,      { passive: true })
+    canvas.addEventListener('mouseleave', handleMouseLeave)
+
+    // ── Render loop ──────────────────────────────────────────────────────────
     let raf
     const animate = () => {
       raf = requestAnimationFrame(animate)
@@ -119,19 +197,34 @@ export default function MonsterViewer({ geometry, onThumbnailCapture, selectedPa
       renderer.setSize(w, h)
     }
     window.addEventListener('resize', onResize)
+    requestAnimationFrame(onResize)
 
-    ctx.current = { renderer, scene, camera, group, orbit, el }
+    ctx.current = { renderer, scene, camera, group, orbit, tc, el }
 
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', onResize)
+      canvas.removeEventListener('mousedown',  handleMouseDown)
+      canvas.removeEventListener('mousemove',  handleMouseMove)
+      canvas.removeEventListener('mouseup',    handleMouseUp)
+      canvas.removeEventListener('wheel',      handleWheel)
+      canvas.removeEventListener('mouseleave', handleMouseLeave)
+      tc.detach(); tc.dispose(); scene.remove(tc)
       group.children.slice().forEach(c => { c.geometry?.dispose(); c.material?.dispose() })
       renderer.dispose()
-      if (el.contains(renderer.domElement)) el.removeChild(renderer.domElement)
+      if (el.contains(canvas)) el.removeChild(canvas)
     }
   }, [])
 
-  // Rebuild monster on geometry change
+  // ── Sync transformMode / transformSpace ─────────────────────────────────────
+  useEffect(() => {
+    const { tc } = ctx.current
+    if (!tc) return
+    tc.mode  = transformMode
+    tc.space = transformSpace
+  }, [transformMode, transformSpace])
+
+  // ── Rebuild meshes ──────────────────────────────────────────────────────────
   useEffect(() => {
     const { group, renderer, scene, camera, el } = ctx.current
     if (!group) return
@@ -147,15 +240,12 @@ export default function MonsterViewer({ geometry, onThumbnailCapture, selectedPa
       })
     }
 
-    // Capture thumbnail from FIXED angle
     if (onThumbnailCapture) {
       setTimeout(() => {
         if (!renderer || !el) return
         const W = el.clientWidth, H = el.clientHeight
-        const savedPos = camera.position.clone()
-        const savedAspect = camera.aspect
-        camera.aspect = 160 / 120
-        camera.updateProjectionMatrix()
+        const savedPos = camera.position.clone(), savedAspect = camera.aspect
+        camera.aspect = 160 / 120; camera.updateProjectionMatrix()
         camera.position.set(
           THUMB.r * Math.sin(THUMB.theta) * Math.cos(THUMB.phi),
           THUMB.r * Math.sin(THUMB.phi),
@@ -166,88 +256,25 @@ export default function MonsterViewer({ geometry, onThumbnailCapture, selectedPa
         renderer.render(scene, camera)
         const src = renderer.domElement.toDataURL('image/jpeg', 0.85)
         renderer.setSize(W, H, false)
-        camera.position.copy(savedPos)
-        camera.aspect = savedAspect
-        camera.updateProjectionMatrix()
+        camera.position.copy(savedPos); camera.aspect = savedAspect; camera.updateProjectionMatrix()
         onThumbnailCapture(src)
       }, 150)
     }
   }, [geometry, onThumbnailCapture])
 
-  // Highlight selected part
+  // ── Selezione highlight + attach TransformControls ──────────────────────────
   useEffect(() => {
+    const { tc } = ctx.current
     const map = meshMapRef.current
-    // Remove all existing outlines
     Object.values(map).forEach(mesh => removeOutline(mesh))
-    // Add outline to selected
+
     if (selectedPartId && map[selectedPartId]) {
       addOutline(map[selectedPartId])
+      if (tc) tc.attach(map[selectedPartId])
+    } else {
+      if (tc) tc.detach()
     }
   }, [selectedPartId, geometry])
 
-  // ── Orbit controls ──
-  const onDown  = useCallback(e => {
-    const o = ctx.current.orbit
-    if (o) { o.dragging = true; o.moved = false; o.lx = e.clientX; o.ly = e.clientY }
-  }, [])
-
-  const onMove  = useCallback(e => {
-    const o = ctx.current.orbit
-    if (!o?.dragging) return
-    const dx = e.clientX - o.lx, dy = e.clientY - o.ly
-    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) o.moved = true
-    o.theta -= dx * 0.008
-    o.phi    = Math.max(0.04, Math.min(1.45, o.phi + dy * 0.008))
-    o.lx = e.clientX; o.ly = e.clientY
-  }, [])
-
-  const onUp = useCallback(() => {
-    const o = ctx.current.orbit
-    if (o) o.dragging = false
-  }, [])
-
-  const onWheel = useCallback(e => {
-    const o = ctx.current.orbit
-    if (o) o.r = Math.max(1.2, Math.min(12, o.r + e.deltaY * 0.005))
-  }, [])
-
-  // ── Click → raycast → select part ──
-  const onClick = useCallback(e => {
-    if (!onPartSelect) return
-    const o = ctx.current.orbit
-    // If mouse moved while down, it was a drag — don't select
-    if (o?.moved) return
-
-    const { renderer, camera, group } = ctx.current
-    if (!renderer || !camera) return
-
-    const rect = renderer.domElement.getBoundingClientRect()
-    const mouse = new THREE.Vector2(
-      ((e.clientX - rect.left) / rect.width)  *  2 - 1,
-      -((e.clientY - rect.top)  / rect.height) *  2 + 1
-    )
-    const raycaster = new THREE.Raycaster()
-    raycaster.setFromCamera(mouse, camera)
-
-    // Only test direct children of group (meshes), not outline lines
-    const meshes = group.children.filter(c => c.isMesh)
-    const hits = raycaster.intersectObjects(meshes)
-    if (hits.length > 0) {
-      const partId = hits[0].object.userData.partId
-      if (partId) onPartSelect(partId)
-    }
-  }, [onPartSelect])
-
-  return (
-    <div
-      ref={mountRef}
-      style={{ width: '100%', height: '100%', cursor: 'grab' }}
-      onMouseDown={onDown}
-      onMouseMove={onMove}
-      onMouseUp={onUp}
-      onMouseLeave={onUp}
-      onWheel={onWheel}
-      onClick={onClick}
-    />
-  )
+  return <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
 }

@@ -95,6 +95,8 @@ export default function MonsterEditor() {
   const [expandedPart, setExpandedPart] = useState(null)
   const [saving, setSaving] = useState(false)
   const [selectedPart, setSelectedPart] = useState(null)
+  const [transformMode, setTransformMode] = useState('translate')
+  const [transformSpace, setTransformSpace] = useState('world')
 
   const loadMonsters = useCallback(async () => {
     try {
@@ -121,6 +123,10 @@ export default function MonsterEditor() {
     setSelectedPart(partId)
     setExpandedPart(partId)
     setTab('geometry')
+  }, [])
+
+  const handlePartTransform = useCallback((partId, updates) => {
+    setPart(partId, updates)
   }, [])
 
   const saveMonster = async () => {
@@ -189,7 +195,7 @@ export default function MonsterEditor() {
           </div>
         </div>
 
-        {/* ── CENTER: 3D scene (transparent — bg-monsters shows through) ── */}
+        {/* ── CENTER: 3D scene ── */}
         <div style={{ flex:1, overflow:'hidden', position:'relative' }}>
           {!editing ? (
             <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center',
@@ -199,8 +205,46 @@ export default function MonsterEditor() {
               SELEZIONA UN MOSTRO<br/>O CREANE UNO NUOVO
             </div>
           ) : (
-            <MonsterViewer geometry={editing.geometry} onThumbnailCapture={setThumbnail}
-              selectedPartId={selectedPart} onPartSelect={handlePartSelect} />
+            <>
+              <MonsterViewer
+                geometry={editing.geometry} onThumbnailCapture={setThumbnail}
+                selectedPartId={selectedPart} onPartSelect={handlePartSelect}
+                onPartTransform={handlePartTransform}
+                transformMode={transformMode} transformSpace={transformSpace}
+              />
+              {/* ── Gizmo toolbar overlay ── */}
+              {selectedPart && (
+                <div style={{
+                  position:'absolute', top:10, left:'50%', transform:'translateX(-50%)',
+                  display:'flex', gap:4, alignItems:'center',
+                  background:'rgba(6,4,2,0.82)', border:`1px solid ${C.border}`,
+                  padding:'4px 8px', pointerEvents:'auto',
+                }}>
+                  {[['translate','T','Traslazione'],['rotate','R','Rotazione'],['scale','S','Scala']].map(([m,k,label]) => (
+                    <button key={m} onClick={() => setTransformMode(m)} title={label}
+                      style={{
+                        background: transformMode===m ? C.red : 'transparent',
+                        border: `1px solid ${transformMode===m ? C.red : C.borderMed}`,
+                        color: transformMode===m ? '#fff' : C.txtSub,
+                        fontFamily:'monospace', fontSize:11, fontWeight:'bold',
+                        padding:'3px 10px', cursor:'pointer', letterSpacing:1,
+                        transition:'all 0.1s',
+                      }}>{k}</button>
+                  ))}
+                  <div style={{ width:1, height:18, background:C.border, margin:'0 4px' }} />
+                  {[['world','MONDO'],['local','LOCALE']].map(([s,label]) => (
+                    <button key={s} onClick={() => setTransformSpace(s)} title={label}
+                      style={{
+                        background: transformSpace===s ? '#1a0900' : 'transparent',
+                        border: `1px solid ${transformSpace===s ? C.borderMed : C.border}`,
+                        color: transformSpace===s ? C.txtMain : C.txtGhost,
+                        fontFamily:'monospace', fontSize:9, letterSpacing:2,
+                        padding:'3px 8px', cursor:'pointer', transition:'all 0.1s',
+                      }}>{label}</button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
 
