@@ -137,7 +137,7 @@ export default function MonsterViewer({
   geometry, onThumbnailCapture,
   selectedPartId, onPartSelect, onPartTransform,
   transformMode = 'translate', transformSpace = 'world',
-  stats = null,
+  stats = null, showOverlays = true,
 }) {
   const mountRef          = useRef(null)
   const ctx               = useRef({})
@@ -145,9 +145,15 @@ export default function MonsterViewer({
   const onPartSelectRef    = useRef(onPartSelect)
   const onPartTransformRef = useRef(onPartTransform)
   const selectedPartIdRef  = useRef(selectedPartId)
+  const showOverlaysRef    = useRef(showOverlays)
   useEffect(() => { onPartSelectRef.current   = onPartSelect   }, [onPartSelect])
   useEffect(() => { onPartTransformRef.current = onPartTransform }, [onPartTransform])
   useEffect(() => { selectedPartIdRef.current  = selectedPartId  }, [selectedPartId])
+  useEffect(() => {
+    showOverlaysRef.current = showOverlays
+    const { overlayGroup } = ctx.current
+    if (overlayGroup) overlayGroup.visible = showOverlays
+  }, [showOverlays])
 
   // ── Main setup ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -324,12 +330,14 @@ export default function MonsterViewer({
     if (onThumbnailCapture) {
       setTimeout(() => {
         if (!renderer || !el) return
+        const { overlayGroup } = ctx.current
         const W = el.clientWidth, H = el.clientHeight
         const savedPos = camera.position.clone(), savedAspect = camera.aspect
-        // Temporarily remove outline for clean thumbnail
+        // Nascondi outline e overlay per thumbnail pulita
         const selId = selectedPartIdRef.current
         const selMesh = selId ? meshMapRef.current[selId] : null
         if (selMesh) removeOutline(selMesh)
+        if (overlayGroup) overlayGroup.visible = false
         camera.aspect = 160 / 120; camera.updateProjectionMatrix()
         camera.position.set(
           THUMB.r * Math.sin(THUMB.theta) * Math.cos(THUMB.phi),
@@ -340,8 +348,9 @@ export default function MonsterViewer({
         renderer.setSize(160, 120, false)
         renderer.render(scene, camera)
         const src = renderer.domElement.toDataURL('image/jpeg', 0.85)
-        // Restore outline and viewport
+        // Ripristina outline, overlay e viewport
         if (selMesh) addOutline(selMesh)
+        if (overlayGroup) overlayGroup.visible = showOverlaysRef.current
         renderer.setSize(W, H, false)
         camera.position.copy(savedPos); camera.aspect = savedAspect; camera.updateProjectionMatrix()
         onThumbnailCapture(src)

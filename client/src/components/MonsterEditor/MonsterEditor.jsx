@@ -150,6 +150,7 @@ export default function MonsterEditor() {
   const [selectedPart, setSelectedPart] = useState(null)
   const [transformMode, setTransformMode] = useState('translate')
   const [transformSpace, setTransformSpace] = useState('world')
+  const [showOverlays, setShowOverlays] = useState(true)
 
   // ── Undo / Redo ───────────────────────────────────────────────────────────────
   // curRef è aggiornato SINCRONICAMENTE ad ogni mutazione (non aspetta il render)
@@ -370,6 +371,13 @@ export default function MonsterEditor() {
 
   const set     = (k, v) => { _pushUndo(); _commit({...curRef.current, [k]:v}) }
   const setRes  = (k, v) => { _pushUndo(); _commit({...curRef.current, resistances:{...curRef.current.resistances,[k]:v}}) }
+  // Quando attack_range cambia: se ranged_range <= nuovo valore, bump automatico
+  const setAttackRange = (v) => {
+    _pushUndo()
+    const next = { ...curRef.current, attack_range: v }
+    if (next.ranged_range <= v) next.ranged_range = parseFloat((v + 1).toFixed(1))
+    _commit(next)
+  }
 
   const setPart = (id, ch) => {
     _pushUndo()
@@ -506,8 +514,22 @@ export default function MonsterEditor() {
                 onPartSelect={tab === 'geometry' ? handlePartSelect : null}
                 onPartTransform={handlePartTransform}
                 transformMode={transformMode} transformSpace={transformSpace}
-                stats={editing}
+                stats={editing} showOverlays={showOverlays}
               />
+              {/* ── Toggle overlays ── */}
+              <button
+                onClick={() => setShowOverlays(v => !v)}
+                title={showOverlays ? 'Nascondi overlay distanze' : 'Mostra overlay distanze'}
+                style={{
+                  position:'absolute', bottom:10, right:10,
+                  background: showOverlays ? 'rgba(0,30,60,0.82)' : 'rgba(6,4,2,0.72)',
+                  border: `1px solid ${showOverlays ? '#2266aa' : C.border}`,
+                  color: showOverlays ? '#4499ff' : C.txtGhost,
+                  fontFamily:'monospace', fontSize:9, letterSpacing:2,
+                  padding:'4px 10px', cursor:'pointer', transition:'all 0.15s',
+                }}>
+                ◎ {showOverlays ? 'OVERLAY ON' : 'OVERLAY OFF'}
+              </button>
               {/* ── Gizmo toolbar overlay ── */}
               {selectedPart && (
                 <div style={{
@@ -644,7 +666,7 @@ export default function MonsterEditor() {
 
               {/* ── Tab content ── */}
               <div className="me-scroll" style={{ flex:1, overflowY:'auto', padding:'14px 12px' }}>
-                {tab==='stats'    && <StatsTab    editing={editing} set={set} />}
+                {tab==='stats'    && <StatsTab    editing={editing} set={set} setAttackRange={setAttackRange} />}
                 {tab==='geometry' && <GeometryTab parts={editing.geometry?.parts||[]}
                   expandedPart={expandedPart} setExpandedPart={setExpandedPart}
                   selectedPart={selectedPart} setSelectedPart={setSelectedPart}
@@ -740,7 +762,7 @@ function DpsBadge({ dps, color }) {
   )
 }
 
-function StatsTab({ editing, set }) {
+function StatsTab({ editing, set, setAttackRange }) {
   const ToggleRow = ({ label, options, value, onChange }) => (
     <div>
       <div style={{ color:C.txtSub, fontSize:10, letterSpacing:2, marginBottom:5 }}>{label}</div>
@@ -819,7 +841,7 @@ function StatsTab({ editing, set }) {
           <div style={{ color:'#cc6600', fontSize:9, letterSpacing:2, marginBottom:8 }}>MISCHIA</div>
           <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
             <Slider label="PORTATA" value={editing.attack_range} min={0.5} max={5} step={0.1}
-              color='#cc8800' unit={`${editing.attack_range}m`} onChange={v=>set('attack_range',v)} />
+              color='#cc8800' unit={`${editing.attack_range}m`} onChange={v=>setAttackRange(v)} />
             <Slider label="DANNO" value={editing.damage} min={1} max={200}
               color='#cc2200' unit={editing.damage} onChange={v=>set('damage',v)} />
             <Slider label="CADENZA" value={editing.melee_rate} min={0.1} max={5} step={0.1}
@@ -831,7 +853,7 @@ function StatsTab({ editing, set }) {
           <div style={{ paddingLeft:8, borderLeft:`2px solid #002288` }}>
             <div style={{ color:'#4488cc', fontSize:9, letterSpacing:2, marginBottom:8 }}>DISTANZA</div>
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              <Slider label="PORTATA" value={editing.ranged_range} min={1} max={50}
+              <Slider label="PORTATA" value={editing.ranged_range} min={editing.attack_range + 0.5} max={50} step={0.5}
                 color='#4488cc' unit={`${editing.ranged_range}m`} onChange={v=>set('ranged_range',v)} />
               <Slider label="DANNO" value={editing.ranged_damage} min={1} max={200}
                 color='#2266aa' unit={editing.ranged_damage} onChange={v=>set('ranged_damage',v)} />
