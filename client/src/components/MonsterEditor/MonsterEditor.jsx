@@ -647,7 +647,7 @@ export default function MonsterEditor() {
 
               {/* ── Tab content ── */}
               <div className="me-scroll" style={{ flex:1, overflowY:'auto', padding:'14px 12px' }}>
-                {tab==='stats'    && <StatsTab    editing={editing} set={set} setRes={setRes} />}
+                {tab==='stats'    && <StatsTab    editing={editing} set={set} />}
                 {tab==='geometry' && <GeometryTab parts={editing.geometry?.parts||[]}
                   expandedPart={expandedPart} setExpandedPart={setExpandedPart}
                   selectedPart={selectedPart} setSelectedPart={setSelectedPart}
@@ -731,9 +731,19 @@ function MonsterCard({ monster, selected, onClick, onDelete, onDuplicate }) {
 }
 
 // ── Stats tab ─────────────────────────────────────────────────────────────────
-function StatsTab({ editing, set, setRes }) {
-  const r = editing.resistances || {}
+function DpsBadge({ dps, color }) {
+  return (
+    <div style={{ display:'flex', justifyContent:'flex-end', marginTop:2 }}>
+      <span style={{ background:'#1a0500', border:`1px solid ${color}44`,
+        color, fontFamily:'monospace', fontSize:10, letterSpacing:1,
+        padding:'2px 8px' }}>
+        DPS {parseFloat((dps).toFixed(1))}
+      </span>
+    </div>
+  )
+}
 
+function StatsTab({ editing, set }) {
   const ToggleRow = ({ label, options, value, onChange }) => (
     <div>
       <div style={{ color:C.txtSub, fontSize:10, letterSpacing:2, marginBottom:5 }}>{label}</div>
@@ -821,6 +831,7 @@ function StatsTab({ editing, set, setRes }) {
             <Slider label="CADENZA" value={editing.melee_rate} min={0.1} max={5} step={0.1}
               color='#cc5500' unit={`${editing.melee_rate}×/s`} onChange={v=>set('melee_rate',v)} />
           </div>
+          <DpsBadge dps={editing.damage * editing.melee_rate} color='#cc4400' />
         </div>
         {editing.attack_type === 'mixed' && (
           <div style={{ paddingLeft:8, borderLeft:`2px solid #002288` }}>
@@ -833,15 +844,9 @@ function StatsTab({ editing, set, setRes }) {
               <Slider label="CADENZA" value={editing.ranged_rate} min={0.1} max={5} step={0.1}
                 color='#3377bb' unit={`${editing.ranged_rate}×/s`} onChange={v=>set('ranged_rate',v)} />
             </div>
+            <DpsBadge dps={editing.ranged_damage * editing.ranged_rate} color='#4488cc' />
           </div>
         )}
-      </StatSection>
-
-      {/* ── RESISTENZE ── */}
-      <StatSection title="RESISTENZE" last>
-        <Slider label="FUOCO"      value={r.fire||0}   min={0} max={100} color='#ff4400' unit={`${r.fire||0}%`}   onChange={v=>setRes('fire',v)} />
-        <Slider label="GHIACCIO"   value={r.ice||0}    min={0} max={100} color='#44aaff' unit={`${r.ice||0}%`}    onChange={v=>setRes('ice',v)} />
-        <Slider label="PROIETTILE" value={r.bullet||0} min={0} max={100} color='#88aa44' unit={`${r.bullet||0}%`} onChange={v=>setRes('bullet',v)} />
       </StatSection>
 
     </div>
