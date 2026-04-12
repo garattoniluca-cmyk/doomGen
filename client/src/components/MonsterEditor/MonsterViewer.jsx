@@ -74,18 +74,25 @@ function makeSphereOverlay(radius, color, cy = 1.0, opacity = 0.35) {
   return mesh
 }
 
-// Frustum 3D — per il campo visivo
-function makeFovFrustum(range, fovH, fovV, color, eyeY = 1.5) {
-  const hH = Math.tan((fovH / 2) * DEG) * range
-  const hV = Math.tan((fovV / 2) * DEG) * range
-  const O  = new THREE.Vector3(0, eyeY, 0)
-  const tl = new THREE.Vector3(-hH, eyeY + hV, -range)
-  const tr = new THREE.Vector3( hH, eyeY + hV, -range)
-  const bl = new THREE.Vector3(-hH, eyeY - hV, -range)
-  const br = new THREE.Vector3( hH, eyeY - hV, -range)
-  // 4 raggi dall'origine + rettangolo del piano lontano
+// Frustum 3D — usa eye point e look_dir dagli anchor points
+function makeFovFrustum(eyePt, lookDir, range, fovH, fovV, color) {
+  const fwd = new THREE.Vector3(lookDir.x||0, lookDir.y||0, lookDir.z||1).normalize()
+  const worldUp = Math.abs(fwd.y) > 0.9 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0)
+  const right = new THREE.Vector3().crossVectors(worldUp, fwd).normalize()
+  const up    = new THREE.Vector3().crossVectors(fwd, right).normalize()
+
+  const hH  = Math.tan((fovH / 2) * DEG) * range
+  const hV  = Math.tan((fovV / 2) * DEG) * range
+  const eye = new THREE.Vector3(eyePt.x||0, eyePt.y||1.75, eyePt.z||0)
+  const tip = eye.clone().addScaledVector(fwd, range)
+
+  const tl = tip.clone().addScaledVector(right, -hH).addScaledVector(up,  hV)
+  const tr = tip.clone().addScaledVector(right,  hH).addScaledVector(up,  hV)
+  const bl = tip.clone().addScaledVector(right, -hH).addScaledVector(up, -hV)
+  const br = tip.clone().addScaledVector(right,  hH).addScaledVector(up, -hV)
+
   const pts = [
-    O, tl,  O, tr,  O, bl,  O, br,
+    eye, tl,  eye, tr,  eye, bl,  eye, br,
     tl, tr,  tr, br,  br, bl,  bl, tl,
   ]
   return new THREE.LineSegments(
@@ -94,20 +101,40 @@ function makeFovFrustum(range, fovH, fovV, color, eyeY = 1.5) {
   )
 }
 
-// Frustum a 360°: solo sfera wireframe che rappresenta il raggio vista
-function makeSightSphere(range, color, eyeY = 1.5) {
+// Sfera 360°: rappresenta il raggio vista quando FOV >= 360°
+function makeSightSphere(range, color, eyePt = { x:0, y:1.5, z:0 }) {
   const geo  = new THREE.SphereGeometry(range, 24, 14)
   const wire = new THREE.WireframeGeometry(geo)
   const mesh = new THREE.LineSegments(
     wire,
     new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.2, depthWrite: false })
   )
-  mesh.position.y = eyeY
+  mesh.position.set(eyePt.x||0, eyePt.y||1.5, eyePt.z||0)
   geo.dispose()
   return mesh
 }
 
-function buildOverlays(stats) {
+// Piccola sfera solida — marker per anchor points
+function makeAnchorSphere(pos, color, size = 0.07) {
+  const geo  = new THREE.SphereGeometry(size, 10, 8)
+  const mat  = new THREE.MeshLambertMaterial({ color, transparent: true, opacity: 0.85 })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.position.set(pos.x||0, pos.y||0, pos.z||0)
+  return mesh
+}
+
+// Linea freccia dalla posizione nella direzione data
+function makeDirectionLine(from, dir, length, color) {
+  const start = new THREE.Vector3(from.x||0, from.y||0, from.z||0)
+  const fwd   = new THREE.Vector3(dir.x||0, dir.y||0, dir.z||1).normalize()
+  const end   = start.clone().addScaledVector(fwd, length)
+  return new THREE.LineSegments(
+    new THREE.BufferGeometry().setFromPoints([start, end]),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 })
+  )
+}
+
+function buildOverlays(stats, geometry) {
   const group = new THREE.Group()
   if (!stats) return group
   const {
@@ -115,11 +142,16 @@ function buildOverlays(stats) {
     attack_range = 2, attack_type = 'melee', ranged_range = 15,
   } = stats
 
+  const anchors = geometry?.anchors
+  const eyePt   = anchors?.eye      || { x: 0,    y: 1.75, z: 0.24 }
+  const lookDir = anchors?.look_dir || { x: 0,    y: 0,    z: 1    }
+  const firePt  = anchors?.fire     || { x: 0.51, y: 0.97, z: 0.3  }
+
   // Frustum visivo (blu) — o sfera se FOV >= 360°
   if (fov_angle >= 359) {
-    group.add(makeSightSphere(sight_range, 0x4499ff))
+    group.add(makeSightSphere(sight_range, 0x4499ff, eyePt))
   } else {
-    group.add(makeFovFrustum(sight_range, fov_angle, fov_angle_v, 0x4499ff))
+    group.add(makeFovFrustum(eyePt, lookDir, sight_range, fov_angle, fov_angle_v, 0x4499ff))
   }
 
   // Sfera danno mischia (arancio)
@@ -129,6 +161,16 @@ function buildOverlays(stats) {
   if (attack_type === 'mixed' && ranged_range > attack_range) {
     group.add(makeSphereOverlay(ranged_range, 0x44aadd, 1.0, 0.25))
   }
+
+  // Gizmo root: assi XYZ all'origine del mostro (local space reference)
+  group.add(new THREE.AxesHelper(0.45))
+
+  // Marker anchor: sfera occhio (azzurro) + linea direzione
+  group.add(makeAnchorSphere(eyePt, 0x44ddff, 0.06))
+  group.add(makeDirectionLine(eyePt, lookDir, 0.5, 0x44ddff))
+
+  // Marker punto di sparo (giallo-arancio) — sempre visibile nell'editor
+  group.add(makeAnchorSphere(firePt, 0xffaa00, 0.07))
 
   return group
 }
@@ -358,14 +400,14 @@ export default function MonsterViewer({
     }
   }, [geometry, onThumbnailCapture])
 
-  // ── Rebuild stat overlays (FOV cone, melee/ranged range circles) ───────────
+  // ── Rebuild stat overlays (FOV cone, melee/ranged range circles, anchor markers) ──
   useEffect(() => {
     const { overlayGroup } = ctx.current
     if (!overlayGroup) return
     overlayGroup.children.slice().forEach(c => { c.geometry?.dispose(); c.material?.dispose(); overlayGroup.remove(c) })
-    const built = buildOverlays(stats)
+    const built = buildOverlays(stats, geometry)
     built.children.slice().forEach(c => { overlayGroup.add(c) })
-  }, [stats])
+  }, [stats, geometry])
 
   // ── Selezione highlight + attach TransformControls ──────────────────────────
   useEffect(() => {

@@ -57,9 +57,20 @@ const C = {
   redGhost:   '#441100',
 }
 
+// ── Default anchor points ─────────────────────────────────────────────────────
+// eye:      origine del frustum visivo (tra gli occhi del mostro)
+// look_dir: versore avanti (direzione in cui guarda il mostro, normalizzato)
+// fire:     punto di spawn proiettili (invisibile in gioco)
+const DEFAULT_ANCHORS = () => ({
+  eye:      { x: 0,    y: 1.75, z: 0.24 },
+  look_dir: { x: 0,    y: 0,    z: 1    },
+  fire:     { x: 0.51, y: 0.97, z: 0.3, invisible_in_game: true },
+})
+
 // ── Default geometry ──────────────────────────────────────────────────────────
 const DEFAULT_GEOMETRY = {
   v: 1,
+  anchors: DEFAULT_ANCHORS(),
   parts: [
     { id:'leg_l',  label:'Gamba Sx',   shape:'cylinder', w:0,    h:0.65, d:0,    r:0.12, x:-0.19, y:0.325, z:0,    rx:0,   ry:0, rz:0,   color:'#661111' },
     { id:'leg_r',  label:'Gamba Dx',   shape:'cylinder', w:0,    h:0.65, d:0,    r:0.12, x:0.19,  y:0.325, z:0,    rx:0,   ry:0, rz:0,   color:'#661111' },
@@ -87,12 +98,19 @@ const DEFAULT_STATE = () => ({
   attack_range: 2, damage: 20, melee_rate: 1,
   ranged_range: 15, ranged_damage: 15, ranged_rate: 0.5,
   // altro
-  geometry: { v:1, parts: DEFAULT_GEOMETRY.parts.map(p => ({...p})) },
+  geometry: { v:1, anchors: DEFAULT_ANCHORS(), parts: DEFAULT_GEOMETRY.parts.map(p => ({...p})) },
   lore: '',
   sounds: randomMonsterSounds('Nuovo Mostro'),
 })
 
 const uid   = () => Math.random().toString(36).slice(2,8)
+// Garantisce che la geometry abbia sempre anchors validi (retrocompatibilità DB)
+const _ensureAnchors = (geo) => {
+  if (!geo) return { v:1, anchors: DEFAULT_ANCHORS(), parts: [] }
+  if (geo.anchors?.eye && geo.anchors?.look_dir && geo.anchors?.fire) return geo
+  const def = DEFAULT_ANCHORS()
+  return { ...geo, anchors: { eye: geo.anchors?.eye||def.eye, look_dir: geo.anchors?.look_dir||def.look_dir, fire: geo.anchors?.fire||def.fire } }
+}
 const newPart = () => ({ id:uid(), label:'Parte', shape:'box', w:0.5, h:0.5, d:0.5, r:0.25, x:0, y:0.25, z:0, rx:0, ry:0, rz:0, color:'#cc2200' })
 const BEHAVIORS   = ['patrol','chase','shoot','ambush','stationary']
 const SHAPE_ICONS = { box:'□', sphere:'○', cylinder:'⊙', cone:'△' }
@@ -261,7 +279,7 @@ export default function MonsterEditor() {
       attack_type:m.attack_type||'melee',
       attack_range:m.attack_range??2, damage:m.damage??20, melee_rate:m.melee_rate??1,
       ranged_range:m.ranged_range??15, ranged_damage:m.ranged_damage??15, ranged_rate:m.ranged_rate??0.5,
-      geometry:m.geometry||{v:1,parts:[]}, lore:m.lore||'',
+      geometry:_ensureAnchors(m.geometry), lore:m.lore||'',
       sounds:m.sounds||randomMonsterSounds(m.name||'monster') }
     curRef.current = s; savedRef.current = s; setEditing(s)
     savedThumbRef.current = m.thumbnail||null
@@ -342,7 +360,7 @@ export default function MonsterEditor() {
       attack_type: m.attack_type||'melee',
       attack_range: m.attack_range??2, damage: m.damage??20, melee_rate: m.melee_rate??1,
       ranged_range: m.ranged_range??15, ranged_damage: m.ranged_damage??15, ranged_rate: m.ranged_rate??0.5,
-      geometry: { v:1, parts: (m.geometry?.parts || []).map(p => ({ ...p, id: uid() })) },
+      geometry: { ..._ensureAnchors(m.geometry), parts: (m.geometry?.parts || []).map(p => ({ ...p, id: uid() })) },
       lore: m.lore || '',
       sounds: m.sounds ? JSON.parse(JSON.stringify(m.sounds)) : randomMonsterSounds(m.name||'monster'),
     }
@@ -377,6 +395,13 @@ export default function MonsterEditor() {
     const next = { ...curRef.current, attack_range: v }
     if (next.ranged_range <= v) next.ranged_range = parseFloat((v + 1).toFixed(1))
     _commit(next)
+  }
+
+  const setAnchor = (key, field, value) => {
+    _pushUndo()
+    const anchors = { ...(curRef.current.geometry.anchors || DEFAULT_ANCHORS()),
+      [key]: { ...(curRef.current.geometry.anchors?.[key] || {}), [field]: value } }
+    _commit({ ...curRef.current, geometry: { ...curRef.current.geometry, anchors } })
   }
 
   const setPart = (id, ch) => {
@@ -671,7 +696,8 @@ export default function MonsterEditor() {
                   expandedPart={expandedPart} setExpandedPart={setExpandedPart}
                   selectedPart={selectedPart} setSelectedPart={setSelectedPart}
                   symMap={symMapRef.current} symActive={symActive} onSymToggle={toggleSym}
-                  onAdd={addPart} onAddPair={addSymPair} onDelete={delPart} onCopy={copyPart} onUpdate={setPart} onLiveUpdate={setPartLive} />}
+                  onAdd={addPart} onAddPair={addSymPair} onDelete={delPart} onCopy={copyPart} onUpdate={setPart} onLiveUpdate={setPartLive}
+                  anchors={editing.geometry?.anchors} setAnchor={setAnchor} />}
                 {tab==='sfx'      && <SfxTab sounds={editing.sounds} setSounds={setSounds} monsterName={editing.name} />}
                 {tab==='json'     && <JSONTab     editing={editing} />}
               </div>
@@ -898,9 +924,39 @@ function Slider({ label, value, min, max, step = 1, color, unit, onChange }) {
   )
 }
 
+// ── Anchor point editor ───────────────────────────────────────────────────────
+function AnchorEditor({ label, anchorKey, anchor, setAnchor, color, note }) {
+  const defaults = { eye: {x:0,y:1.75,z:0.24}, look_dir: {x:0,y:0,z:1}, fire: {x:0.51,y:0.97,z:0.3} }
+  const def = defaults[anchorKey] || {x:0,y:0,z:0}
+  const a = anchor || def
+  return (
+    <div style={{ marginBottom:10 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:5 }}>
+        <span style={{ color, fontSize:9, letterSpacing:2 }}>{label}</span>
+        {note && <span style={{ color:C.txtGhost, fontSize:8, letterSpacing:1 }}>{note}</span>}
+      </div>
+      <div style={{ display:'flex', gap:4 }}>
+        {(['x','y','z']).map(field => (
+          <div key={field} style={{ flex:1 }}>
+            <div style={{ color:C.txtGhost, fontSize:8, letterSpacing:1, marginBottom:2, textAlign:'center' }}>{field.toUpperCase()}</div>
+            <input type="number" value={parseFloat((a[field]??0).toFixed(3))} step={0.01}
+              onChange={e => setAnchor(anchorKey, field, parseFloat(e.target.value)||0)}
+              className="me-num"
+              style={{ width:'100%', boxSizing:'border-box', background:C.bgInput,
+                border:`1px solid ${C.borderMed}`, color,
+                fontFamily:'monospace', fontSize:10, padding:'4px 3px',
+                outline:'none', textAlign:'center' }} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Geometry tab ──────────────────────────────────────────────────────────────
 function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSelectedPart,
-    symMap, symActive, onSymToggle, onAdd, onAddPair, onDelete, onCopy, onUpdate, onLiveUpdate }) {
+    symMap, symActive, onSymToggle, onAdd, onAddPair, onDelete, onCopy, onUpdate, onLiveUpdate,
+    anchors, setAnchor }) {
   const allColors = [...new Set(parts.map(p=>p.color).filter(Boolean))]
   const Btn = ({ onClick, children, title }) => (
     <button onClick={onClick} title={title}
@@ -914,6 +970,20 @@ function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSe
   )
   return (
     <div>
+      {/* ── PUNTI DI RIFERIMENTO ── */}
+      <div style={{ marginBottom:12 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 0 5px',
+          borderBottom:`1px solid ${C.border}`, marginBottom:10 }}>
+          <span style={{ color:C.red, fontSize:9, letterSpacing:4, fontWeight:'bold' }}>PUNTI DI RIFERIMENTO</span>
+        </div>
+        <AnchorEditor label="OCCHIO" anchorKey="eye" anchor={anchors?.eye} setAnchor={setAnchor}
+          color='#44ddff' note="origine frustum visivo" />
+        <AnchorEditor label="DIREZIONE" anchorKey="look_dir" anchor={anchors?.look_dir} setAnchor={setAnchor}
+          color='#2299cc' note="versore avanti (normalizzato)" />
+        <AnchorEditor label="PUNTO SPARO" anchorKey="fire" anchor={anchors?.fire} setAnchor={setAnchor}
+          color='#ff8800' note="spawn proiettili · invis. in-game" />
+      </div>
+
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, gap:5 }}>
         <span style={{ color:C.txtDim, fontSize:10, letterSpacing:2 }}>{parts.length} PARTI</span>
         <div style={{ display:'flex', gap:5 }}>
