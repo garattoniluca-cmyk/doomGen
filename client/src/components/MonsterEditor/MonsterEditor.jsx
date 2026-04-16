@@ -503,10 +503,11 @@ export default function MonsterEditor() {
   }
 
   // true when editing state differs from last DB save (or monster has never been saved)
+  // La thumbnail è auto-generata e NON concorre al dirty: viene salvata all'AGGIORNA comunque
   const isDirty = !editing ? false
     : editing.id === null
       ? true
-      : JSON.stringify(editing) !== JSON.stringify(savedRef.current) || thumbnail !== savedThumbRef.current
+      : JSON.stringify(editing) !== JSON.stringify(savedRef.current)
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', fontFamily:'Courier New, monospace',

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pkill -f 'node src/index.js' 2>/dev/null; sleep 1; cd C:/doomGen/server && node src/index.js > /tmp/doomgen-backend.log 2>&1 &",
+            "async": true,
+            "statusMessage": "Avvio backend DoomGen..."
+          }
+        ]
+      }
+    ]
+  }
+}

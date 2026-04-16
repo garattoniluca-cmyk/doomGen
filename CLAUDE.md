@@ -1,5 +1,11 @@
 # DoomGen — Context for Claude
 
+## REGOLA ASSOLUTA
+**Non creare, modificare o eliminare MAI file al di fuori del task esplicitamente richiesto — inclusi settings, hook, config — senza prima chiedere conferma all'utente.**
+Non fare mai `git commit` o `git push` senza richiesta esplicita.
+
+---
+
 Doom 1 clone generativo. Stack: **React + Vite (port 5174)** / **Node/Express (port 3001)** / **MySQL**.
 Repo: `C:\doomGen` — branch `main`, push automatico attivo.
 
