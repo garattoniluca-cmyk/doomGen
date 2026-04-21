@@ -1,119 +1,66 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext.jsx'
 import PageHeader from '../PageHeader.jsx'
-import MonsterViewer from './MonsterViewer.jsx'
-import { monsterSfx, randomMonsterSounds, randomAlertSound, randomMovementSound,
-         MOVEMENT_CATEGORIES, MOOD_COLORS } from '../../utils/monsterSfx.js'
-import TEMPLATES from '../../data/monsterTemplates.js'
+import SupplyViewer from './SupplyViewer.jsx'
+import { monsterSfx, randomMovementSound, MOVEMENT_CATEGORIES } from '../../utils/monsterSfx.js'
+import TEMPLATES from '../../data/supplyTemplates.js'
 
 // ── Inject spinner + scrollbar styles once ────────────────────────────────────
-const STYLE_ID = 'monster-editor-styles'
+const STYLE_ID = 'supply-editor-styles'
 if (!document.getElementById(STYLE_ID)) {
   const s = document.createElement('style')
   s.id = STYLE_ID
   s.textContent = `
-    .me-num::-webkit-inner-spin-button,
-    .me-num::-webkit-outer-spin-button {
-      opacity: 1;
-      width: 22px;
-      height: 100%;
-      cursor: pointer;
-    }
-    .me-num { -moz-appearance: number-input; }
-    .me-scroll::-webkit-scrollbar { width: 5px; }
-    .me-scroll::-webkit-scrollbar-track { background: #0a0705; }
-    .me-scroll::-webkit-scrollbar-thumb { background: #2a1000; border-radius: 2px; }
-    .me-scroll::-webkit-scrollbar-thumb:hover { background: #551800; }
-    .me-btn-icon:hover { color: #ff4400 !important; }
-    .me-part-row:hover { border-color: #441800 !important; }
-    .me-card:hover .me-card-delete { opacity: 1 !important; }
-    .me-card:hover .me-card-actions { opacity: 1 !important; }
+    .se-num::-webkit-inner-spin-button,
+    .se-num::-webkit-outer-spin-button { opacity: 1; width: 22px; height: 100%; cursor: pointer; }
+    .se-num { -moz-appearance: number-input; }
+    .se-scroll::-webkit-scrollbar { width: 5px; }
+    .se-scroll::-webkit-scrollbar-track { background: #0a0705; }
+    .se-scroll::-webkit-scrollbar-thumb { background: #2a1000; border-radius: 2px; }
+    .se-scroll::-webkit-scrollbar-thumb:hover { background: #551800; }
+    .se-btn-icon:hover { color: #ff4400 !important; }
+    .se-part-row:hover { border-color: #441800 !important; }
+    .se-card:hover .se-card-delete { opacity: 1 !important; }
+    .se-card:hover .se-card-actions { opacity: 1 !important; }
   `
   document.head.appendChild(s)
 }
 
-// ── Color tokens ──────────────────────────────────────────────────────────────
+// ── Color tokens (identici al MonsterEditor) ─────────────────────────────────
 const C = {
-  bg:         '#060402',
-  bgPanel:    '#0a0705',
-  bgInput:    '#120800',
-  bgInputHov: '#1a0c00',
-  bgCard:     '#0d0603',
-  bgCardSel:  '#1c0800',
-  bgTabAct:   '#180900',
-  bgBtn:      '#1a0500',
-  border:     '#261200',
-  borderMed:  '#3a1800',
-  borderAct:  '#cc2200',
-  // Text
-  txtBright:  '#ffcc88',   // input values, selected names
-  txtMain:    '#cc7744',   // main readable text
-  txtSub:     '#996644',   // labels, section headers
-  txtDim:     '#664433',   // secondary info, tab inactive
-  txtGhost:   '#3a2010',   // very subtle hints
-  txtAccent:  '#ff6633',   // highlights, active tabs
-  // Red tones
-  red:        '#cc2200',
-  redDim:     '#881500',
-  redGhost:   '#441100',
+  bg:'#060402', bgPanel:'#0a0705', bgInput:'#120800', bgInputHov:'#1a0c00',
+  bgCard:'#0d0603', bgCardSel:'#1c0800', bgTabAct:'#180900', bgBtn:'#1a0500',
+  border:'#261200', borderMed:'#3a1800', borderAct:'#cc2200',
+  txtBright:'#ffcc88', txtMain:'#cc7744', txtSub:'#996644',
+  txtDim:'#664433', txtGhost:'#3a2010', txtAccent:'#ff6633',
+  red:'#cc2200', redDim:'#881500', redGhost:'#441100',
 }
 
-// ── Default anchor points ─────────────────────────────────────────────────────
-// eye:      origine del frustum visivo (tra gli occhi del mostro)
-// look_dir: versore avanti (direzione in cui guarda il mostro, normalizzato)
-// fire:     punto di spawn proiettili (invisibile in gioco)
-const DEFAULT_ANCHORS = () => ({
-  eye:      { x: 0,    y: 1.75, z: 0.24 },
-  look_dir: { x: 0,    y: 0,    z: 1    },
-  fire:     { x: 0.51, y: 0.97, z: 0.3, invisible_in_game: true },
-})
-
-// ── Default geometry ──────────────────────────────────────────────────────────
+// ── Default geometry per nuova fornitura ──────────────────────────────────────
 const DEFAULT_GEOMETRY = {
   v: 1,
-  anchors: DEFAULT_ANCHORS(),
   parts: [
-    { id:'leg_l',  label:'Gamba Sx',   shape:'cylinder', w:0,    h:0.65, d:0,    r:0.12, x:-0.19, y:0.325, z:0,    rx:0,   ry:0, rz:0,   color:'#661111' },
-    { id:'leg_r',  label:'Gamba Dx',   shape:'cylinder', w:0,    h:0.65, d:0,    r:0.12, x:0.19,  y:0.325, z:0,    rx:0,   ry:0, rz:0,   color:'#661111' },
-    { id:'body',   label:'Corpo',      shape:'box',      w:0.72, h:0.85, d:0.48, r:0,    x:0,     y:1.075, z:0,    rx:0,   ry:0, rz:0,   color:'#8B2222' },
-    { id:'arm_l',  label:'Braccio Sx', shape:'cylinder', w:0,    h:0.65, d:0,    r:0.1,  x:-0.51, y:0.97,  z:0,    rx:0,   ry:0, rz:22,  color:'#661111' },
-    { id:'arm_r',  label:'Braccio Dx', shape:'cylinder', w:0,    h:0.65, d:0,    r:0.1,  x:0.51,  y:0.97,  z:0,    rx:0,   ry:0, rz:-22, color:'#661111' },
-    { id:'head',   label:'Testa',      shape:'sphere',   w:0,    h:0,    d:0,    r:0.28, x:0,     y:1.73,  z:0,    rx:0,   ry:0, rz:0,   color:'#8B2222' },
-    { id:'eye_l',  label:'Occhio Sx',  shape:'sphere',   w:0,    h:0,    d:0,    r:0.07, x:-0.1,  y:1.75,  z:0.24, rx:0,   ry:0, rz:0,   color:'#ff5500' },
-    { id:'eye_r',  label:'Occhio Dx',  shape:'sphere',   w:0,    h:0,    d:0,    r:0.07, x:0.1,   y:1.75,  z:0.24, rx:0,   ry:0, rz:0,   color:'#ff5500' },
-    { id:'horn_l', label:'Corno Sx',   shape:'cone',     w:0,    h:0.28, d:0,    r:0.07, x:-0.14, y:1.98,  z:0.06, rx:-15, ry:0, rz:-10, color:'#441111' },
-    { id:'horn_r', label:'Corno Dx',   shape:'cone',     w:0,    h:0.28, d:0,    r:0.07, x:0.14,  y:1.98,  z:0.06, rx:-15, ry:0, rz:10,  color:'#441111' },
+    { id:'base', label:'Base', shape:'box', w:0.6, h:0.6, d:0.6, r:0, x:0, y:0.3, z:0, rx:0, ry:0, rz:0, color:'#6b4a28' },
   ],
 }
 
+// ── Sfx rng ───────────────────────────────────────────────────────────────────
+function sfxRng() {
+  let s = (Math.random() * 0xFFFFFFFF) | 0
+  return () => { s = (s * 1664525 + 1013904223) | 0; return (s >>> 0) / 0xFFFFFFFF }
+}
+// Proximity sound usa lo stesso schema di "movement" (loop/continuous)
+const defaultProximity = () => randomMovementSound(sfxRng(), 'fly')
+
 const DEFAULT_STATE = () => ({
-  id: null, name: 'Nuovo Mostro',
-  // movimento
-  move_type: 'walk', speed: 5, rotate_speed: 90, hover_height: 1.5,
-  // visuale
-  sight_range: 10, fov_angle: 90, fov_angle_v: 60,
-  // vita
-  health: 100, hp_regen: 0, hp_regen_rate: 0,
-  // attacco
-  attack_type: 'melee',
-  attack_range: 2, damage: 20, melee_rate: 1,
-  ranged_range: 15, ranged_damage: 15, ranged_rate: 0.5,
-  // altro
-  geometry: { v:1, anchors: DEFAULT_ANCHORS(), parts: DEFAULT_GEOMETRY.parts.map(p => ({...p})) },
+  id: null, name: 'Nuova Fornitura',
+  geometry: { v:1, parts: DEFAULT_GEOMETRY.parts.map(p => ({...p})) },
   lore: '',
-  sounds: randomMonsterSounds('Nuovo Mostro'),
+  sounds: { proximity: defaultProximity() },
 })
 
-const uid   = () => Math.random().toString(36).slice(2,8)
-// Garantisce che la geometry abbia sempre anchors validi (retrocompatibilità DB)
-const _ensureAnchors = (geo) => {
-  if (!geo) return { v:1, anchors: DEFAULT_ANCHORS(), parts: [] }
-  if (geo.anchors?.eye && geo.anchors?.look_dir && geo.anchors?.fire) return geo
-  const def = DEFAULT_ANCHORS()
-  return { ...geo, anchors: { eye: geo.anchors?.eye||def.eye, look_dir: geo.anchors?.look_dir||def.look_dir, fire: geo.anchors?.fire||def.fire } }
-}
-const newPart = () => ({ id:uid(), label:'Parte', shape:'box', w:0.5, h:0.5, d:0.5, r:0.25, x:0, y:0.25, z:0, rx:0, ry:0, rz:0, color:'#cc2200' })
-const BEHAVIORS   = ['patrol','chase','shoot','ambush','stationary']
+const uid = () => Math.random().toString(36).slice(2,8)
+const newPart = () => ({ id:uid(), label:'Parte', shape:'box', w:0.5, h:0.5, d:0.5, r:0.25, x:0, y:0.25, z:0, rx:0, ry:0, rz:0, color:'#6b4a28' })
 const SHAPE_ICONS = { box:'□', sphere:'○', cylinder:'⊙', cone:'△' }
 
 // ── Symmetry helpers ──────────────────────────────────────────────────────────
@@ -148,7 +95,6 @@ function buildSymMap(parts) {
   }
   return map
 }
-// Mirror a change dict across the X axis
 function mirrorChange(ch) {
   const m = { ...ch }
   if ('x'  in ch) m.x  = -ch.x
@@ -158,36 +104,31 @@ function mirrorChange(ch) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function MonsterEditor() {
+export default function SupplyEditor() {
   const { token } = useAuth()
-  const [monsters, setMonsters] = useState([])
-  const [editing, setEditing] = useState(null)
+  const [supplies, setSupplies] = useState([])
+  const [editing, setEditing]   = useState(null)
   const [thumbnail, setThumbnail] = useState(null)
-  const [tab, setTab] = useState('stats')
+  const [tab, setTab] = useState('geometry')
   const [expandedPart, setExpandedPart] = useState(null)
   const [saving, setSaving] = useState(false)
   const [selectedPart, setSelectedPart] = useState(null)
-  const [transformMode, setTransformMode] = useState('translate')
+  const [transformMode, setTransformMode]   = useState('translate')
   const [transformSpace, setTransformSpace] = useState('world')
-  const [showOverlays, setShowOverlays] = useState(false)
-  const [studioMode, setStudioMode] = useState(false)
+  const [studioMode, setStudioMode]   = useState(false)
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
+  const [showAIPicker, setShowAIPicker] = useState(false)
 
-  // ── Undo / Redo ───────────────────────────────────────────────────────────────
-  // curRef è aggiornato SINCRONICAMENTE ad ogni mutazione (non aspetta il render)
-  // così pushUndo cattura sempre lo stato reale corrente, anche in chiamate rapide consecutive
+  // Undo / Redo
   const undoStack = useRef([])
   const redoStack = useRef([])
   const curRef    = useRef(null)
   const [histLen, setHistLen] = useState({ u:0, r:0 })
 
-  // ── Dirty tracking ────────────────────────────────────────────────────────────
-  const savedRef      = useRef(null)
-  const savedThumbRef = useRef(null)
+  // Dirty tracking
+  const savedRef = useRef(null)
 
-  // ── Symmetry ─────────────────────────────────────────────────────────────────
-  // symMapRef: { partId → mirrorPartId } — recomputed on load/save, volatile
-  // symActiveRef: always current (avoids stale closure in memoized callbacks)
+  // Symmetry
   const symMapRef    = useRef({})
   const symActiveRef = useRef(new Set())
   const [symActive, _setSymActive] = useState(new Set())
@@ -197,7 +138,6 @@ export default function MonsterEditor() {
     _setSymActive(next)
   }
 
-  // Aggiorna stato e curRef insieme — usato da tutti i setter
   const _commit = (next) => { curRef.current = next; setEditing(next) }
 
   const _pushUndo = () => {
@@ -217,8 +157,7 @@ export default function MonsterEditor() {
 
   const undo = useCallback(() => {
     if (!undoStack.current.length) return
-    if (curRef.current)
-      redoStack.current = [curRef.current, ...redoStack.current.slice(0, 49)]
+    if (curRef.current) redoStack.current = [curRef.current, ...redoStack.current.slice(0, 49)]
     const prev = undoStack.current[undoStack.current.length - 1]
     undoStack.current = undoStack.current.slice(0, -1)
     curRef.current = prev
@@ -229,8 +168,7 @@ export default function MonsterEditor() {
 
   const redo = useCallback(() => {
     if (!redoStack.current.length) return
-    if (curRef.current)
-      undoStack.current = [...undoStack.current.slice(-49), curRef.current]
+    if (curRef.current) undoStack.current = [...undoStack.current.slice(-49), curRef.current]
     const next = redoStack.current[0]
     redoStack.current = redoStack.current.slice(1)
     curRef.current = next
@@ -241,15 +179,12 @@ export default function MonsterEditor() {
 
   useEffect(() => {
     const handler = e => {
-      // Ignore if focus is inside a text input / textarea
       const tag = document.activeElement?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
-
       if (e.ctrlKey || e.metaKey) {
         if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
         else if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) { e.preventDefault(); redo() }
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        // Delete selected part
         if (selectedPart) { e.preventDefault(); delPart(selectedPart) }
       }
     }
@@ -257,40 +192,35 @@ export default function MonsterEditor() {
     return () => window.removeEventListener('keydown', handler)
   }, [undo, redo, selectedPart])
 
-  const loadMonsters = useCallback(async () => {
+  const loadSupplies = useCallback(async () => {
     try {
-      const r = await fetch('/api/monsters', { headers: { Authorization:`Bearer ${token}` } })
-      if (r.ok) setMonsters(await r.json())
+      const r = await fetch('/api/supplies', { headers: { Authorization:`Bearer ${token}` } })
+      if (r.ok) setSupplies(await r.json())
     } catch {}
   }, [token])
 
-  useEffect(() => { loadMonsters() }, [loadMonsters])
+  useEffect(() => { loadSupplies() }, [loadSupplies])
 
   const _initSym = (parts) => {
     const map = buildSymMap(parts)
     symMapRef.current = map
-    // Auto-activate all detected pairs
     setSymActive(new Set(Object.keys(map)))
   }
 
-  const selectMonster = (m) => {
+  const selectSupply = (m) => {
     undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
-    const s = { id:m.id, name:m.name,
-      move_type: m.move_type||'walk', speed:m.speed??5, rotate_speed:m.rotate_speed??90, hover_height:m.hover_height??1.5,
-      sight_range:m.sight_range??10, fov_angle:m.fov_angle??90, fov_angle_v:m.fov_angle_v??60,
-      health:m.health??100, hp_regen:m.hp_regen??0, hp_regen_rate:m.hp_regen_rate??0,
-      attack_type:m.attack_type||'melee',
-      attack_range:m.attack_range??2, damage:m.damage??20, melee_rate:m.melee_rate??1,
-      ranged_range:m.ranged_range??15, ranged_damage:m.ranged_damage??15, ranged_rate:m.ranged_rate??0.5,
-      geometry:_ensureAnchors(m.geometry), lore:m.lore||'',
-      sounds:m.sounds||randomMonsterSounds(m.name||'monster') }
+    const s = {
+      id: m.id, name: m.name,
+      geometry: m.geometry || { v:1, parts:[] },
+      lore: m.lore || '',
+      sounds: m.sounds || { proximity: defaultProximity() },
+    }
     curRef.current = s; savedRef.current = s; setEditing(s)
-    savedThumbRef.current = m.thumbnail||null
     _initSym(s.geometry?.parts || [])
-    setThumbnail(m.thumbnail||null); setTab('stats'); setExpandedPart(null); setSelectedPart(null)
+    setThumbnail(m.thumbnail||null); setTab('geometry'); setExpandedPart(null); setSelectedPart(null)
   }
 
-  const newMonster = () => setShowTemplatePicker(true)
+  const newSupply = () => setShowTemplatePicker(true)
 
   const startFromTemplate = (tpl) => {
     setShowTemplatePicker(false)
@@ -298,106 +228,73 @@ export default function MonsterEditor() {
     const s = tpl
       ? {
           id: null, name: tpl.name,
-          move_type: tpl.move_type||'walk', speed: tpl.speed??5, rotate_speed: tpl.rotate_speed??90, hover_height: tpl.hover_height??1.5,
-          sight_range: tpl.sight_range??10, fov_angle: tpl.fov_angle??90, fov_angle_v: tpl.fov_angle_v??60,
-          health: tpl.health??100, hp_regen: 0, hp_regen_rate: 0,
-          attack_type: tpl.attack_type||'melee',
-          attack_range: tpl.attack_range??2, damage: tpl.damage??20, melee_rate: tpl.melee_rate??1,
-          ranged_range: tpl.ranged_range??15, ranged_damage: tpl.ranged_damage??15, ranged_rate: tpl.ranged_rate??0.5,
-          geometry: { ..._ensureAnchors(tpl.geometry), parts: tpl.geometry.parts.map(p => ({...p, id: uid()})) },
-          lore: tpl.description||'',
-          sounds: randomMonsterSounds(tpl.name),
+          geometry: { v:1, parts: tpl.geometry.parts.map(p => ({...p, id: uid()})) },
+          lore: tpl.description || '',
+          sounds: { proximity: defaultProximity() },
         }
       : DEFAULT_STATE()
     curRef.current = s; savedRef.current = null; setEditing(s)
-    savedThumbRef.current = null
     _initSym(s.geometry.parts)
-    setThumbnail(null); setTab('stats'); setExpandedPart(null); setSelectedPart(null)
+    setThumbnail(null); setTab('geometry'); setExpandedPart(null); setSelectedPart(null)
   }
 
-  const handlePartSelect = useCallback((partId) => {
-    setSelectedPart(partId)
-    setExpandedPart(partId)
-  }, [])
+  const handlePartSelect    = useCallback((partId)          => { setSelectedPart(partId); setExpandedPart(partId) }, [])
+  const handlePartTransform = useCallback((partId, updates) => { setPart(partId, updates) }, [])
 
-  const handlePartTransform = useCallback((partId, updates) => {
-    setPart(partId, updates)
-  }, [])
-
-  const saveMonster = async () => {
+  const saveSupply = async () => {
     if (!editing || saving) return
     setSaving(true)
     const snapEditing = curRef.current
     const snapThumb   = thumbnail
     try {
-      const url = editing.id ? `/api/monsters/${editing.id}` : '/api/monsters'
+      const url = editing.id ? `/api/supplies/${editing.id}` : '/api/supplies'
       const r = await fetch(url, {
         method: editing.id ? 'PUT' : 'POST',
         headers: { Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
         body: JSON.stringify({
-          name:editing.name,
-          move_type:editing.move_type, speed:editing.speed, rotate_speed:editing.rotate_speed, hover_height:editing.hover_height,
-          sight_range:editing.sight_range, fov_angle:editing.fov_angle, fov_angle_v:editing.fov_angle_v,
-          health:editing.health, hp_regen:editing.hp_regen, hp_regen_rate:editing.hp_regen_rate,
-          attack_type:editing.attack_type,
-          attack_range:editing.attack_range, damage:editing.damage, melee_rate:editing.melee_rate,
-          ranged_range:editing.ranged_range, ranged_damage:editing.ranged_damage, ranged_rate:editing.ranged_rate,
-          geometry:editing.geometry, thumbnail, lore:editing.lore,
-          sounds:editing.sounds,
+          name: editing.name, geometry: editing.geometry,
+          thumbnail, lore: editing.lore, sounds: editing.sounds,
         }),
       })
       if (r.ok) {
         const data = await r.json()
         if (!editing.id && data.id) {
           const updated = { ...snapEditing, id: data.id }
-          savedRef.current = updated
-          curRef.current   = updated
-          setEditing(updated)
+          savedRef.current = updated; curRef.current = updated; setEditing(updated)
         } else {
           savedRef.current = snapEditing
         }
-        savedThumbRef.current = snapThumb
-        // Rebuild symmetry map after save — volatile, based on saved geometry
         _initSym(snapEditing.geometry?.parts || [])
-        await loadMonsters()
+        await loadSupplies()
       }
     } finally { setSaving(false) }
   }
 
-  const duplicateMonster = () => {
-    if (!editing) return
-    duplicateFrom(editing)
-  }
+  const duplicateSupply = () => { if (editing) duplicateFrom(editing) }
 
   const duplicateFrom = (m) => {
     undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
     const s = {
       id: null,
       name: m.name + ' (copia)',
-      move_type: m.move_type||'walk', speed: m.speed??5, rotate_speed: m.rotate_speed??90, hover_height: m.hover_height??1.5,
-      sight_range: m.sight_range??10, fov_angle: m.fov_angle??90, fov_angle_v: m.fov_angle_v??60,
-      health: m.health??100, hp_regen: m.hp_regen??0, hp_regen_rate: m.hp_regen_rate??0,
-      attack_type: m.attack_type||'melee',
-      attack_range: m.attack_range??2, damage: m.damage??20, melee_rate: m.melee_rate??1,
-      ranged_range: m.ranged_range??15, ranged_damage: m.ranged_damage??15, ranged_rate: m.ranged_rate??0.5,
-      geometry: { ..._ensureAnchors(m.geometry), parts: (m.geometry?.parts || []).map(p => ({ ...p, id: uid() })) },
+      geometry: { v:1, parts: (m.geometry?.parts || []).map(p => ({ ...p, id: uid() })) },
       lore: m.lore || '',
-      sounds: m.sounds ? JSON.parse(JSON.stringify(m.sounds)) : randomMonsterSounds(m.name||'monster'),
+      sounds: m.sounds ? JSON.parse(JSON.stringify(m.sounds)) : { proximity: defaultProximity() },
     }
     curRef.current = s; savedRef.current = null; setEditing(s)
-    savedThumbRef.current = null
     _initSym(s.geometry?.parts || [])
-    setThumbnail(null); setTab('stats'); setExpandedPart(null); setSelectedPart(null)
+    setThumbnail(null); setTab('geometry'); setExpandedPart(null); setSelectedPart(null)
   }
 
-  const deleteMonster = async (id) => {
-    if (!confirm('Eliminare questo mostro?')) return
-    await fetch(`/api/monsters/${id}`, { method:'DELETE', headers:{ Authorization:`Bearer ${token}` } })
+  const deleteSupply = async (id) => {
+    if (!confirm('Eliminare questa fornitura?')) return
+    await fetch(`/api/supplies/${id}`, { method:'DELETE', headers:{ Authorization:`Bearer ${token}` } })
     if (editing?.id === id) setEditing(null)
-    await loadMonsters()
+    await loadSupplies()
   }
 
-  const setSounds   = (ch)       => { _pushUndo(); _commit({...curRef.current, sounds:{...curRef.current.sounds,...ch}}) }
+  const set = (k, v) => { _pushUndo(); _commit({...curRef.current, [k]:v}) }
+  const setSounds = (ch) => { _pushUndo(); _commit({...curRef.current, sounds:{...curRef.current.sounds, ...ch}}) }
 
   // Apply a part change (and optionally its mirror) to an arbitrary base state
   const _applyPartChange = (base, id, ch, mirrorId) => {
@@ -407,37 +304,18 @@ export default function MonsterEditor() {
     return { ...base, geometry: { ...base.geometry, parts } }
   }
 
-  const set     = (k, v) => { _pushUndo(); _commit({...curRef.current, [k]:v}) }
-  const setRes  = (k, v) => { _pushUndo(); _commit({...curRef.current, resistances:{...curRef.current.resistances,[k]:v}}) }
-  // Quando attack_range cambia: se ranged_range <= nuovo valore, bump automatico
-  const setAttackRange = (v) => {
-    _pushUndo()
-    const next = { ...curRef.current, attack_range: v }
-    if (next.ranged_range <= v) next.ranged_range = parseFloat((v + 1).toFixed(1))
-    _commit(next)
-  }
-
-  const setAnchor = (key, field, value) => {
-    _pushUndo()
-    const anchors = { ...(curRef.current.geometry.anchors || DEFAULT_ANCHORS()),
-      [key]: { ...(curRef.current.geometry.anchors?.[key] || {}), [field]: value } }
-    _commit({ ...curRef.current, geometry: { ...curRef.current.geometry, anchors } })
-  }
-
   const setPart = (id, ch) => {
     _pushUndo()
     const mid = symMapRef.current[id]
     const useSym = mid && symActiveRef.current.has(id)
     const next = _applyPartChange(curRef.current, id, ch, useSym ? mid : null)
     _commit(next)
-    // Asymmetric change (sym off) → break the pair so it's not re-detected
     if (mid && !useSym) {
       const m = { ...symMapRef.current }; delete m[id]; delete m[mid]; symMapRef.current = m
       setSymActive(prev => { const s = new Set(prev); s.delete(id); s.delete(mid); return s })
     }
   }
 
-  // setPartLive: preview visivo solo — NON aggiorna curRef
   const setPartLive = (id, ch) => {
     const mid = symMapRef.current[id]
     const useSym = mid && symActiveRef.current.has(id)
@@ -503,42 +381,39 @@ export default function MonsterEditor() {
     if (selectedPart===id) setSelectedPart(null)
   }
 
-  // true when editing state differs from last DB save (or monster has never been saved)
-  // La thumbnail è auto-generata e NON concorre al dirty: viene salvata all'AGGIORNA comunque
   const isDirty = !editing ? false
-    : editing.id === null
-      ? true
-      : JSON.stringify(editing) !== JSON.stringify(savedRef.current)
+    : editing.id === null ? true
+    : JSON.stringify(editing) !== JSON.stringify(savedRef.current)
 
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100%', fontFamily:'Courier New, monospace',
       backgroundImage:'url(/bg-monsters.png)', backgroundSize:'cover', backgroundPosition:'center', position:'relative' }}>
 
-      <PageHeader title="Editor Mostri" icon="/card-mostri.png" />
+      <PageHeader title="Editor Forniture" />
 
       {/* ── 3-column layout ── */}
       <div style={{ flex:1, display:'flex', overflow:'hidden' }}>
 
-        {/* ── LEFT: monster list ── */}
+        {/* ── LEFT: supply list ── */}
         <div style={{ width:240, background:'rgba(6,4,2,0.88)', borderRight:`1px solid ${C.border}`, display:'flex', flexDirection:'column', flexShrink:0 }}>
           <div style={{ padding:'10px', borderBottom:`1px solid ${C.border}` }}>
-            <button onClick={newMonster}
+            <button onClick={newSupply}
               style={{ width:'100%', background:C.bgBtn, border:`1px solid ${C.redDim}`, color:C.txtAccent,
                 fontFamily:'monospace', fontSize:11, letterSpacing:3, padding:'9px', cursor:'pointer',
                 transition:'all 0.15s' }}
               onMouseEnter={e=>Object.assign(e.currentTarget.style,{background:'#2a0800',borderColor:C.red,color:'#ff8844'})}
               onMouseLeave={e=>Object.assign(e.currentTarget.style,{background:C.bgBtn,borderColor:C.redDim,color:C.txtAccent})}>
-              + NUOVO MOSTRO
+              + NUOVA FORNITURA
             </button>
           </div>
-          <div className="me-scroll" style={{ flex:1, overflowY:'auto', padding:'8px' }}>
-            {monsters.length === 0 &&
+          <div className="se-scroll" style={{ flex:1, overflowY:'auto', padding:'8px' }}>
+            {supplies.length === 0 &&
               <div style={{ color:C.txtGhost, fontSize:10, textAlign:'center', marginTop:40, letterSpacing:2, lineHeight:2 }}>
-                NESSUN MOSTRO<br/>CREANE UNO
+                NESSUNA FORNITURA<br/>CREANE UNA
               </div>}
-            {monsters.map(m =>
-              <MonsterCard key={m.id} monster={m} selected={editing?.id===m.id}
-                onClick={()=>selectMonster(m)} onDelete={()=>deleteMonster(m.id)}
+            {supplies.map(m =>
+              <SupplyCard key={m.id} supply={m} selected={editing?.id===m.id}
+                onClick={()=>selectSupply(m)} onDelete={()=>deleteSupply(m.id)}
                 onDuplicate={()=>duplicateFrom(m)} />)}
           </div>
         </div>
@@ -550,17 +425,16 @@ export default function MonsterEditor() {
               justifyContent:'center',
               color:'#00eedd', fontSize:12, letterSpacing:4, textAlign:'center', lineHeight:2,
               textShadow:'0 0 16px #00ffee, 0 2px 6px #000' }}>
-              SELEZIONA UN MOSTRO<br/>O CREANE UNO NUOVO
+              SELEZIONA UNA FORNITURA<br/>O CREANE UNA NUOVA
             </div>
           ) : (
             <>
-              <MonsterViewer
+              <SupplyViewer
                 geometry={editing.geometry} onThumbnailCapture={setThumbnail}
                 selectedPartId={selectedPart}
                 onPartSelect={tab === 'geometry' ? handlePartSelect : null}
                 onPartTransform={handlePartTransform}
                 transformMode={transformMode} transformSpace={transformSpace}
-                stats={editing} showOverlays={showOverlays}
                 studioMode={studioMode}
               />
               {/* ── Toggle studio light ── */}
@@ -568,7 +442,7 @@ export default function MonsterEditor() {
                 onClick={() => setStudioMode(v => !v)}
                 title={studioMode ? 'Torna alla luce infernale' : 'Luce bianca per vedere i colori reali'}
                 style={{
-                  position:'absolute', bottom:10, right:126,
+                  position:'absolute', bottom:10, right:10,
                   background: studioMode ? 'rgba(40,40,40,0.88)' : 'rgba(6,4,2,0.72)',
                   border: `1px solid ${studioMode ? '#888888' : C.border}`,
                   color: studioMode ? '#dddddd' : C.txtGhost,
@@ -576,20 +450,6 @@ export default function MonsterEditor() {
                   padding:'4px 10px', cursor:'pointer', transition:'all 0.15s',
                 }}>
                 {studioMode ? '◉ STUDIO' : '◎ STUDIO'}
-              </button>
-              {/* ── Toggle overlays ── */}
-              <button
-                onClick={() => setShowOverlays(v => !v)}
-                title={showOverlays ? 'Nascondi overlay distanze' : 'Mostra overlay distanze'}
-                style={{
-                  position:'absolute', bottom:10, right:10,
-                  background: showOverlays ? 'rgba(0,30,60,0.82)' : 'rgba(6,4,2,0.72)',
-                  border: `1px solid ${showOverlays ? '#2266aa' : C.border}`,
-                  color: showOverlays ? '#4499ff' : C.txtGhost,
-                  fontFamily:'monospace', fontSize:9, letterSpacing:2,
-                  padding:'4px 10px', cursor:'pointer', transition:'all 0.15s',
-                }}>
-                ◎ {showOverlays ? 'OVERLAY ON' : 'OVERLAY OFF'}
               </button>
               {/* ── Gizmo toolbar overlay ── */}
               {selectedPart && (
@@ -656,32 +516,29 @@ export default function MonsterEditor() {
                     outline:'none', letterSpacing:1, marginBottom:8 }} />
                 <div style={{ display:'flex', gap:6 }}>
                   {(isDirty || saving) && (
-                  <button onClick={saveMonster} disabled={saving}
-                    style={{ flex:1, background:saving?'#661100':'#aa1c00', border:'none', color:'#fff',
-                      fontFamily:'monospace', fontSize:11, letterSpacing:2, padding:'7px 0',
-                      cursor:saving?'default':'pointer', transition:'background 0.15s' }}>
-                    {saving ? '...' : (editing.id ? '↑ AGGIORNA' : '✓ SALVA')}
-                  </button>
+                    <button onClick={saveSupply} disabled={saving}
+                      style={{ flex:1, background:saving?'#661100':'#aa1c00', border:'none', color:'#fff',
+                        fontFamily:'monospace', fontSize:11, letterSpacing:2, padding:'7px 0',
+                        cursor:saving?'default':'pointer', transition:'background 0.15s' }}>
+                      {saving ? '...' : (editing.id ? '↑ AGGIORNA' : '✓ SALVA')}
+                    </button>
                   )}
-                  {/* Duplicate */}
-                  <IconBtn onClick={duplicateMonster} title="Duplica mostro"
+                  <IconBtn onClick={duplicateSupply} title="Duplica fornitura"
                     icon="⧉" label="COPIA"
                     base={{ bg:'transparent', border:C.borderMed, color:C.txtSub }}
                     hover={{ bg:'#0d1a0d', border:'#336633', color:'#88cc88' }} />
-                  {/* Delete from DB */}
                   {editing.id && (
-                    <IconBtn onClick={()=>deleteMonster(editing.id)} title="Elimina dal database"
+                    <IconBtn onClick={()=>deleteSupply(editing.id)} title="Elimina dal database"
                       icon="⊗" label="ELIMINA"
                       base={{ bg:C.redGhost, border:C.redDim, color:'#cc4422' }}
                       hover={{ bg:'#3a0000', border:C.red, color:'#ff5533' }} />
                   )}
-                  {/* Close panel */}
                   <IconBtn onClick={()=>setEditing(null)} title="Chiudi"
                     icon="←" label="CHIUDI"
                     base={{ bg:'transparent', border:'#2a2a2a', color:'#555' }}
                     hover={{ bg:'#1a1a1a', border:'#666', color:'#aaa' }} />
                 </div>
-                {/* ── Undo / Redo buttons ── */}
+                {/* ── Undo / Redo ── */}
                 <div style={{ display:'flex', gap:6, marginTop:6 }}>
                   {[
                     { fn: undo, enabled: histLen.u > 0, label:'⟲', title:`Annulla (Ctrl+Z) — ${histLen.u} step` },
@@ -706,7 +563,7 @@ export default function MonsterEditor() {
 
               {/* ── Tab bar ── */}
               <div style={{ display:'flex', borderBottom:`1px solid ${C.border}`, flexShrink:0 }}>
-                {[['stats','≡','STATS'],['geometry','⬡','GEO'],['sfx','♪','SFX'],['json','{}','JSON']].map(([t,icon,l]) => {
+                {[['geometry','⬡','GEO'],['sfx','♪','SFX'],['json','{}','JSON']].map(([t,icon,l]) => {
                   const active = tab === t
                   return (
                     <div key={t} onClick={()=>{ setTab(t); if(t!=='geometry'){ setSelectedPart(null); setExpandedPart(null) } }}
@@ -726,16 +583,14 @@ export default function MonsterEditor() {
               </div>
 
               {/* ── Tab content ── */}
-              <div className="me-scroll" style={{ flex:1, overflowY:'auto', padding:'14px 12px' }}>
-                {tab==='stats'    && <StatsTab    editing={editing} set={set} setAttackRange={setAttackRange} />}
+              <div className="se-scroll" style={{ flex:1, overflowY:'auto', padding:'14px 12px' }}>
                 {tab==='geometry' && <GeometryTab parts={editing.geometry?.parts||[]}
                   expandedPart={expandedPart} setExpandedPart={setExpandedPart}
                   selectedPart={selectedPart} setSelectedPart={setSelectedPart}
                   symMap={symMapRef.current} symActive={symActive} onSymToggle={toggleSym}
-                  onAdd={addPart} onAddPair={addSymPair} onDelete={delPart} onCopy={copyPart} onUpdate={setPart} onLiveUpdate={setPartLive}
-                  anchors={editing.geometry?.anchors} setAnchor={setAnchor} />}
-                {tab==='sfx'      && <SfxTab sounds={editing.sounds} setSounds={setSounds} monsterName={editing.name} />}
-                {tab==='json'     && <JSONTab     editing={editing} />}
+                  onAdd={addPart} onAddPair={addSymPair} onDelete={delPart} onCopy={copyPart} onUpdate={setPart} onLiveUpdate={setPartLive} />}
+                {tab==='sfx'      && <SfxTab sounds={editing.sounds} setSounds={setSounds} />}
+                {tab==='json'     && <JSONTab editing={editing} />}
               </div>
             </>
           )}
@@ -743,7 +598,7 @@ export default function MonsterEditor() {
       </div>
 
       {/* ── Template Picker Modal ── */}
-      {showTemplatePicker && (
+      {showTemplatePicker && !showAIPicker && (
         <div style={{
           position:'absolute', inset:0, background:'rgba(2,1,0,0.93)',
           display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
@@ -752,18 +607,22 @@ export default function MonsterEditor() {
           <div style={{ color:C.red, fontSize:11, letterSpacing:5, marginBottom:20, fontFamily:'monospace' }}>
             SCEGLI TEMPLATE DI PARTENZA
           </div>
-          <div style={{ display:'flex', flexWrap:'wrap', gap:12, justifyContent:'center', maxWidth:760, marginBottom:24 }}>
-            {/* Vuoto */}
-            <TemplateCard
-              name="VUOTO" description="Schema base minimalista"
-              onClick={() => startFromTemplate(null)}
-            />
+          <div style={{ display:'flex', flexWrap:'wrap', gap:12, justifyContent:'center', maxWidth:860, marginBottom:24 }}>
+            {/* Card AI — prima di tutto */}
+            <div onClick={() => setShowAIPicker(true)}
+              style={{ width:160, background:'#001a2e', border:`2px solid #2266aa`,
+                padding:'12px 10px', cursor:'pointer', transition:'all 0.15s', textAlign:'center',
+                boxShadow:'0 0 18px #1144aa44' }}
+              onMouseEnter={e=>Object.assign(e.currentTarget.style,{borderColor:'#44aaff',background:'#002244',boxShadow:'0 0 24px #2266aaaa'})}
+              onMouseLeave={e=>Object.assign(e.currentTarget.style,{borderColor:'#2266aa',background:'#001a2e',boxShadow:'0 0 18px #1144aa44'})}>
+              <div style={{ color:'#66aaff', fontSize:22, marginBottom:6 }}>✦</div>
+              <div style={{ color:'#88ccff', fontSize:10, letterSpacing:2, marginBottom:6, fontFamily:'monospace' }}>GENERA CON AI</div>
+              <div style={{ color:'#4488aa', fontSize:9, letterSpacing:1, lineHeight:1.5 }}>Descrivi l'oggetto, Gemini crea la geometria</div>
+            </div>
+            <TemplateCard name="VUOTO" description="Schema base minimalista" onClick={() => startFromTemplate(null)} />
             {TEMPLATES.map(t => (
-              <TemplateCard key={t.id}
-                name={t.name.toUpperCase()} description={t.description}
-                stats={`${t.health}HP · ${t.speed}spd · ${t.attack_type==='mixed'?'misto':'mischia'}`}
-                onClick={() => startFromTemplate(t)}
-              />
+              <TemplateCard key={t.id} name={t.name.toUpperCase()} description={t.description}
+                onClick={() => startFromTemplate(t)} />
             ))}
           </div>
           <button onClick={() => setShowTemplatePicker(false)}
@@ -775,11 +634,40 @@ export default function MonsterEditor() {
           </button>
         </div>
       )}
+
+      {/* ── AI Generator Modal ── */}
+      {showTemplatePicker && showAIPicker && (
+        <div style={{
+          position:'absolute', inset:0, background:'rgba(2,1,0,0.95)',
+          display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+          zIndex:100, padding:'32px',
+        }}>
+          <AIGeneratorModal
+            token={token}
+            onApply={(name, geometry) => {
+              setShowTemplatePicker(false); setShowAIPicker(false)
+              undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
+              const s = {
+                id: null, name,
+                geometry,
+                lore: '',
+                sounds: { proximity: defaultProximity() },
+              }
+              curRef.current = s; savedRef.current = null; setEditing(s)
+              _rebuildSym(s)
+              setThumbnail(null); setTab('geometry'); setExpandedPart(null); setSelectedPart(null)
+            }}
+            onBack={() => setShowAIPicker(false)}
+            onCancel={() => { setShowTemplatePicker(false); setShowAIPicker(false) }}
+          />
+        </div>
+      )}
     </div>
   )
 }
 
-function TemplateCard({ name, description, stats, onClick }) {
+// ── Shared micro-components ───────────────────────────────────────────────────
+function TemplateCard({ name, description, onClick }) {
   return (
     <div onClick={onClick}
       style={{ width:160, background:C.bgCard, border:`1px solid ${C.border}`, padding:'12px 10px',
@@ -787,13 +675,11 @@ function TemplateCard({ name, description, stats, onClick }) {
       onMouseEnter={e=>Object.assign(e.currentTarget.style,{borderColor:C.red,background:C.bgCardSel})}
       onMouseLeave={e=>Object.assign(e.currentTarget.style,{borderColor:C.border,background:C.bgCard})}>
       <div style={{ color:C.txtAccent, fontSize:10, letterSpacing:2, marginBottom:6, fontFamily:'monospace' }}>{name}</div>
-      <div style={{ color:C.txtSub, fontSize:9, letterSpacing:1, lineHeight:1.5, marginBottom:stats?6:0 }}>{description}</div>
-      {stats && <div style={{ color:C.txtGhost, fontSize:8, letterSpacing:1 }}>{stats}</div>}
+      <div style={{ color:C.txtSub, fontSize:9, letterSpacing:1, lineHeight:1.5 }}>{description}</div>
     </div>
   )
 }
 
-// ── Icon button (icon + small label stacked) ─────────────────────────────────
 function IconBtn({ onClick, title, icon, label, base, hover }) {
   return (
     <button onClick={onClick} title={title}
@@ -809,35 +695,31 @@ function IconBtn({ onClick, title, icon, label, base, hover }) {
   )
 }
 
-// ── Monster card ──────────────────────────────────────────────────────────────
-function MonsterCard({ monster, selected, onClick, onDelete, onDuplicate }) {
+// ── Supply card ───────────────────────────────────────────────────────────────
+function SupplyCard({ supply, selected, onClick, onDelete, onDuplicate }) {
   return (
-    <div className="me-card" onClick={onClick}
+    <div className="se-card" onClick={onClick}
       style={{ border:`1px solid ${selected?C.red:C.border}`, background:selected?C.bgCardSel:C.bgCard,
         padding:'7px 8px', marginBottom:5, cursor:'pointer', display:'flex', gap:8,
         alignItems:'center', position:'relative', transition:'all 0.12s' }}
       onMouseEnter={e=>{ if(!selected) e.currentTarget.style.borderColor=C.borderMed }}
       onMouseLeave={e=>{ if(!selected) e.currentTarget.style.borderColor=C.border }}>
-      {/* Thumbnail */}
       <div style={{ width:56, height:42, background:'#0c0805', border:`1px solid ${C.border}`,
         flexShrink:0, overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center' }}>
-        {monster.thumbnail
-          ? <img src={monster.thumbnail} style={{ width:'100%', height:'100%', objectFit:'cover' }} alt="" />
-          : <span style={{ color:C.txtGhost, fontSize:20 }}>☠</span>}
+        {supply.thumbnail
+          ? <img src={supply.thumbnail} style={{ width:'100%', height:'100%', objectFit:'cover' }} alt="" />
+          : <span style={{ color:C.txtGhost, fontSize:20 }}>□</span>}
       </div>
-      {/* Info */}
       <div style={{ flex:1, minWidth:0 }}>
         <div style={{ color:selected?'#ff6633':C.txtMain, fontSize:11, overflow:'hidden',
           textOverflow:'ellipsis', whiteSpace:'nowrap', letterSpacing:1, fontWeight:'bold' }}>
-          {monster.name}
+          {supply.name}
         </div>
         <div style={{ color:C.txtDim, fontSize:9, marginTop:3, letterSpacing:1 }}>
-          HP:{monster.health} · SPD:{monster.speed} · DMG:{monster.damage}
+          {supply.geometry?.parts?.length ?? 0} PARTI
         </div>
-        <div style={{ color:C.txtGhost, fontSize:9, marginTop:1, letterSpacing:1 }}>{monster.behavior}</div>
       </div>
-      {/* Hover actions */}
-      <div className="me-card-actions"
+      <div className="se-card-actions"
         style={{ position:'absolute', top:0, right:0, bottom:0, display:'flex', flexDirection:'column',
           opacity:0, transition:'opacity 0.15s' }}>
         <button title="Duplica" onClick={e=>{e.stopPropagation();onDuplicate()}}
@@ -859,188 +741,9 @@ function MonsterCard({ monster, selected, onClick, onDelete, onDuplicate }) {
   )
 }
 
-// ── Stats tab ─────────────────────────────────────────────────────────────────
-function DpsBadge({ dps, color }) {
-  return (
-    <div style={{ display:'flex', justifyContent:'flex-end', marginTop:2 }}>
-      <span style={{ background:'#1a0500', border:`1px solid ${color}44`,
-        color, fontFamily:'monospace', fontSize:10, letterSpacing:1,
-        padding:'2px 8px' }}>
-        DPS {parseFloat((dps).toFixed(1))}
-      </span>
-    </div>
-  )
-}
-
-function StatsTab({ editing, set, setAttackRange }) {
-  const ToggleRow = ({ label, options, value, onChange }) => (
-    <div>
-      <div style={{ color:C.txtSub, fontSize:10, letterSpacing:2, marginBottom:5 }}>{label}</div>
-      <div style={{ display:'flex', gap:4 }}>
-        {options.map(([v, l]) => (
-          <button key={v} onClick={() => onChange(v)}
-            style={{
-              flex:1, background: value===v ? C.red : C.bgInput,
-              border: `1px solid ${value===v ? C.red : C.borderMed}`,
-              color: value===v ? '#fff' : C.txtSub,
-              fontFamily:'monospace', fontSize:10, letterSpacing:1,
-              padding:'5px 0', cursor:'pointer', transition:'all 0.15s',
-            }}>
-            {l}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:0 }}>
-
-      {/* ── DEAMBULAZIONE ── */}
-      <StatSection title="DEAMBULAZIONE">
-        <ToggleRow label="TIPO" value={editing.move_type} onChange={v=>set('move_type',v)}
-          options={[['walk','TERRA'],['fly','VOLO'],['hovercraft','HOVER']]} />
-        <Slider label="VELOCITÀ" value={editing.speed} min={1} max={20} color='#ffcc00'
-          unit={`${editing.speed}/20`} onChange={v=>set('speed',v)} />
-        <Slider label="ROT. VELOCITÀ" value={editing.rotate_speed} min={10} max={360}
-          color='#ffaa44' unit={`${editing.rotate_speed}°/s`} onChange={v=>set('rotate_speed',v)} />
-        {editing.move_type === 'hovercraft' && (
-          <Slider label="ALTEZZA HOVERING" value={editing.hover_height} min={0.2} max={5} step={0.1}
-            color='#88ddff' unit={`${editing.hover_height}m`} onChange={v=>set('hover_height',v)} />
-        )}
-      </StatSection>
-
-      {/* ── VISUALE ── */}
-      <StatSection title="VISUALE">
-        <Slider label="RAGGIO VISTA" value={editing.sight_range} min={1} max={50}
-          color='#4499ff' unit={`${editing.sight_range}m`} onChange={v=>set('sight_range',v)} />
-        <Slider label="FOV ORIZZONTALE" value={editing.fov_angle} min={10} max={360}
-          color='#2277cc' unit={`${editing.fov_angle}°`} onChange={v=>set('fov_angle',v)} />
-        <Slider label="FOV VERTICALE" value={editing.fov_angle_v ?? 60} min={10} max={180}
-          color='#1155aa' unit={`${editing.fov_angle_v ?? 60}°`} onChange={v=>set('fov_angle_v',v)} />
-      </StatSection>
-
-      {/* ── VITA ── */}
-      <StatSection title="VITA">
-        <Slider label="HP MAX" value={editing.health} min={1} max={500}
-          color='#cc4400' unit={editing.health} onChange={v=>set('health',v)} />
-        <label style={{ display:'flex', alignItems:'center', gap:8, cursor:'pointer' }}>
-          <input type="checkbox" checked={!!editing.hp_regen}
-            onChange={e => set('hp_regen', e.target.checked ? 1 : 0)}
-            style={{ accentColor:C.red, cursor:'pointer', width:14, height:14 }} />
-          <span style={{ color: editing.hp_regen ? C.txtMain : C.txtDim, fontSize:10, letterSpacing:2, transition:'color 0.15s' }}>
-            REGEN HP
-          </span>
-          {!!editing.hp_regen && (
-            <span style={{ color:'#44cc44', fontSize:10, fontFamily:'monospace', marginLeft:'auto' }}>
-              +{editing.hp_regen_rate}/s
-            </span>
-          )}
-        </label>
-        {!!editing.hp_regen && (
-          <Slider label="CADENZA REGEN" value={editing.hp_regen_rate} min={0.1} max={20} step={0.1}
-            color='#44cc44' unit={`${editing.hp_regen_rate}/s`} onChange={v=>set('hp_regen_rate',v)} />
-        )}
-      </StatSection>
-
-      {/* ── ATTACCO ── */}
-      <StatSection title="ATTACCO">
-        <ToggleRow label="TIPO ATTACCO" value={editing.attack_type} onChange={v=>set('attack_type',v)}
-          options={[['melee','MISCHIA'],['mixed','MISTO']]} />
-        <div style={{ paddingLeft:8, borderLeft:`2px solid #882200` }}>
-          <div style={{ color:'#cc6600', fontSize:9, letterSpacing:2, marginBottom:8 }}>MISCHIA</div>
-          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-            <Slider label="PORTATA" value={editing.attack_range} min={0.5} max={5} step={0.1}
-              color='#cc8800' unit={`${editing.attack_range}m`} onChange={v=>setAttackRange(v)} />
-            <Slider label="DANNO" value={editing.damage} min={1} max={200}
-              color='#cc2200' unit={editing.damage} onChange={v=>set('damage',v)} />
-            <Slider label="CADENZA" value={editing.melee_rate} min={0.1} max={5} step={0.1}
-              color='#cc5500' unit={`${editing.melee_rate}×/s`} onChange={v=>set('melee_rate',v)} />
-          </div>
-          <DpsBadge dps={editing.damage * editing.melee_rate} color='#cc4400' />
-        </div>
-        {editing.attack_type === 'mixed' && (
-          <div style={{ paddingLeft:8, borderLeft:`2px solid #002288` }}>
-            <div style={{ color:'#4488cc', fontSize:9, letterSpacing:2, marginBottom:8 }}>DISTANZA</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              <Slider label="PORTATA" value={editing.ranged_range} min={editing.attack_range + 0.5} max={50} step={0.5}
-                color='#4488cc' unit={`${editing.ranged_range}m`} onChange={v=>set('ranged_range',v)} />
-              <Slider label="DANNO" value={editing.ranged_damage} min={1} max={200}
-                color='#2266aa' unit={editing.ranged_damage} onChange={v=>set('ranged_damage',v)} />
-              <Slider label="CADENZA" value={editing.ranged_rate} min={0.1} max={5} step={0.1}
-                color='#3377bb' unit={`${editing.ranged_rate}×/s`} onChange={v=>set('ranged_rate',v)} />
-            </div>
-            <DpsBadge dps={editing.ranged_damage * editing.ranged_rate} color='#4488cc' />
-          </div>
-        )}
-      </StatSection>
-
-    </div>
-  )
-}
-
-function StatSection({ title, children, last }) {
-  return (
-    <div style={{ marginBottom: last ? 0 : 4 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 0 5px',
-        borderBottom:`1px solid ${C.border}`, marginBottom:10 }}>
-        <span style={{ color:C.red, fontSize:9, letterSpacing:4, fontWeight:'bold' }}>{title}</span>
-      </div>
-      <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:12 }}>
-        {children}
-      </div>
-    </div>
-  )
-}
-
-function Slider({ label, value, min, max, step = 1, color, unit, onChange }) {
-  const v = value ?? min ?? 0
-  return (
-    <div>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:5 }}>
-        <span style={{ color:C.txtSub, fontSize:10, letterSpacing:2 }}>{label}</span>
-        <span style={{ color:color, fontSize:11, fontFamily:'monospace', fontWeight:'bold' }}>{unit}</span>
-      </div>
-      <input type="range" min={min} max={max} step={step} value={v}
-        onChange={e=>onChange(Number(e.target.value))}
-        style={{ width:'100%', accentColor:color, cursor:'pointer', height:4 }} />
-    </div>
-  )
-}
-
-// ── Anchor point editor ───────────────────────────────────────────────────────
-function AnchorEditor({ label, anchorKey, anchor, setAnchor, color, note }) {
-  const defaults = { eye: {x:0,y:1.75,z:0.24}, look_dir: {x:0,y:0,z:1}, fire: {x:0.51,y:0.97,z:0.3} }
-  const def = defaults[anchorKey] || {x:0,y:0,z:0}
-  const a = anchor || def
-  return (
-    <div style={{ marginBottom:10 }}>
-      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:5 }}>
-        <span style={{ color, fontSize:9, letterSpacing:2 }}>{label}</span>
-        {note && <span style={{ color:C.txtGhost, fontSize:8, letterSpacing:1 }}>{note}</span>}
-      </div>
-      <div style={{ display:'flex', gap:4 }}>
-        {(['x','y','z']).map(field => (
-          <div key={field} style={{ flex:1 }}>
-            <div style={{ color:C.txtGhost, fontSize:8, letterSpacing:1, marginBottom:2, textAlign:'center' }}>{field.toUpperCase()}</div>
-            <input type="number" value={parseFloat((a[field]??0).toFixed(3))} step={0.01}
-              onChange={e => setAnchor(anchorKey, field, parseFloat(e.target.value)||0)}
-              className="me-num"
-              style={{ width:'100%', boxSizing:'border-box', background:C.bgInput,
-                border:`1px solid ${C.borderMed}`, color,
-                fontFamily:'monospace', fontSize:10, padding:'4px 3px',
-                outline:'none', textAlign:'center' }} />
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
 // ── Geometry tab ──────────────────────────────────────────────────────────────
 function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSelectedPart,
-    symMap, symActive, onSymToggle, onAdd, onAddPair, onDelete, onCopy, onUpdate, onLiveUpdate,
-    anchors, setAnchor }) {
+    symMap, symActive, onSymToggle, onAdd, onAddPair, onDelete, onCopy, onUpdate, onLiveUpdate }) {
   const allColors = [...new Set(parts.map(p=>p.color).filter(Boolean))]
   const Btn = ({ onClick, children, title }) => (
     <button onClick={onClick} title={title}
@@ -1054,20 +757,6 @@ function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSe
   )
   return (
     <div>
-      {/* ── PUNTI DI RIFERIMENTO ── */}
-      <div style={{ marginBottom:12 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 0 5px',
-          borderBottom:`1px solid ${C.border}`, marginBottom:10 }}>
-          <span style={{ color:C.red, fontSize:9, letterSpacing:4, fontWeight:'bold' }}>PUNTI DI RIFERIMENTO</span>
-        </div>
-        <AnchorEditor label="OCCHIO" anchorKey="eye" anchor={anchors?.eye} setAnchor={setAnchor}
-          color='#44ddff' note="origine frustum visivo" />
-        <AnchorEditor label="DIREZIONE" anchorKey="look_dir" anchor={anchors?.look_dir} setAnchor={setAnchor}
-          color='#2299cc' note="versore avanti (normalizzato)" />
-        <AnchorEditor label="PUNTO SPARO" anchorKey="fire" anchor={anchors?.fire} setAnchor={setAnchor}
-          color='#ff8800' note="spawn proiettili · invis. in-game" />
-      </div>
-
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, gap:5 }}>
         <span style={{ color:C.txtDim, fontSize:10, letterSpacing:2 }}>{parts.length} PARTI</span>
         <div style={{ display:'flex', gap:5 }}>
@@ -1086,8 +775,7 @@ function GeometryTab({ parts, expandedPart, setExpandedPart, selectedPart, setSe
           onCopy={(withMirror)=>onCopy(part.id, withMirror)}
           onToggle={() => {
             const next = expandedPart===part.id ? null : part.id
-            setExpandedPart(next)
-            setSelectedPart(part.id)
+            setExpandedPart(next); setSelectedPart(part.id)
           }}
           onUpdate={ch=>onUpdate(part.id,ch)}
           onLiveUpdate={ch=>onLiveUpdate(part.id,ch)}
@@ -1101,11 +789,10 @@ function PartRow({ part, expanded, selected, allColors, hasMirror, symOn, onSymT
   const borderColor = selected ? C.red : expanded ? C.borderMed : C.border
   const bg = selected ? '#200a00' : expanded ? '#150900' : '#0d0603'
   return (
-    <div className="me-part-row"
+    <div className="se-part-row"
       style={{ marginBottom:3, border:`1px solid ${borderColor}`,
         background: bg, transition:'border-color 0.12s',
         boxShadow: selected ? `0 0 6px ${C.red}44` : 'none' }}>
-      {/* Header */}
       <div onClick={onToggle}
         style={{ display:'flex', alignItems:'center', gap:7, padding:'7px 8px',
           cursor:'pointer', userSelect:'none' }}>
@@ -1130,18 +817,17 @@ function PartRow({ part, expanded, selected, allColors, hasMirror, symOn, onSymT
             ⟺
           </button>
         )}
-        <button className="me-btn-icon"
+        <button className="se-btn-icon"
           title={hasMirror ? 'Copia parte (click) / copia coppia (shift+click)' : 'Copia parte'}
           onClick={e=>{e.stopPropagation(); onCopy(hasMirror && e.shiftKey)}}
           style={{ background:'transparent', border:'none', color:C.txtGhost,
             cursor:'pointer', fontSize:13, lineHeight:1, padding:'0 2px',
             flexShrink:0, transition:'color 0.15s' }}>⧉</button>
-        <button className="me-btn-icon" onClick={e=>{e.stopPropagation();onDelete()}}
+        <button className="se-btn-icon" onClick={e=>{e.stopPropagation();onDelete()}}
           style={{ background:'transparent', border:'none', color:C.txtGhost,
             cursor:'pointer', fontSize:16, lineHeight:1, padding:'0 2px',
             flexShrink:0, transition:'color 0.15s' }}>×</button>
       </div>
-      {/* Expanded editor */}
       {expanded && (
         <div style={{ padding:'12px 12px 14px', borderTop:`1px solid ${C.border}` }}>
           <PartEditor part={part} onChange={onUpdate} onLive={onLiveUpdate} allColors={allColors} />
@@ -1155,26 +841,22 @@ function PartEditor({ part, onChange, onLive, allColors = [] }) {
   const Num = ({ label, k, step=0.05 }) => (
     <label style={{ display:'flex', flexDirection:'column', gap:4 }}>
       <span style={{ color:C.txtSub, fontSize:10, letterSpacing:1 }}>{label}</span>
-      <input type="number" step={step} className="me-num"
+      <input type="number" step={step} className="se-num"
         value={+(part[k]??0).toFixed(3)}
         onChange={e => onChange({ [k]: parseFloat(e.target.value) || 0 })}
         style={{ width:'100%', background:C.bgInput, border:`1px solid ${C.borderMed}`,
           color:C.txtBright, fontFamily:'monospace', fontSize:13,
           padding:'5px 6px', outline:'none', textAlign:'right',
-          boxSizing:'border-box', height:34 }}
-      />
+          boxSizing:'border-box', height:34 }} />
     </label>
   )
-
   const Row = ({ children }) => (
     <div style={{ display:'grid', gridTemplateColumns:`repeat(${children.length||1}, 1fr)`, gap:7 }}>
       {children}
     </div>
   )
-
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-      {/* Label + Shape + Color */}
       <div style={{ display:'flex', gap:7, alignItems:'flex-end' }}>
         <label style={{ flex:1, display:'flex', flexDirection:'column', gap:4 }}>
           <span style={{ color:C.txtSub, fontSize:10, letterSpacing:1 }}>NOME</span>
@@ -1195,7 +877,7 @@ function PartEditor({ part, onChange, onLive, allColors = [] }) {
         <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
           <span style={{ color:C.txtSub, fontSize:10, letterSpacing:1 }}>COLORE</span>
           <div style={{ display:'flex', alignItems:'center', gap:4, flexWrap:'wrap' }}>
-            <input type="color" value={part.color||'#cc2200'}
+            <input type="color" value={part.color||'#6b4a28'}
               onInput={e => onLive?.({color:e.target.value})}
               onBlur={e => onChange({color:e.target.value})}
               style={{ width:44, height:34, border:`1px solid ${C.borderMed}`,
@@ -1203,37 +885,23 @@ function PartEditor({ part, onChange, onLive, allColors = [] }) {
             {allColors.map(c => (
               <div key={c} title={c}
                 onClick={() => onChange({color:c})}
-                style={{
-                  width: 18, height: 18, background: c, cursor:'pointer', flexShrink:0,
+                style={{ width:18, height:18, background:c, cursor:'pointer', flexShrink:0,
                   border: `2px solid ${c === part.color ? '#fff' : '#33000066'}`,
-                  borderRadius:2, transition:'transform 0.1s',
-                }}
+                  borderRadius:2, transition:'transform 0.1s' }}
                 onMouseEnter={e=>{ e.currentTarget.style.transform='scale(1.25)' }}
                 onMouseLeave={e=>{ e.currentTarget.style.transform='scale(1)' }} />
             ))}
           </div>
         </div>
       </div>
-
-      {/* Dimensions */}
       <div>
         <SectionLabel>DIMENSIONI</SectionLabel>
         {part.shape==='box'      && <Row><Num label="W" k="w"/><Num label="H" k="h"/><Num label="D" k="d"/></Row>}
         {part.shape==='sphere'   && <Row><Num label="RAGGIO" k="r"/></Row>}
         {(part.shape==='cylinder'||part.shape==='cone') && <Row><Num label="R" k="r"/><Num label="H" k="h"/></Row>}
       </div>
-
-      {/* Position */}
-      <div>
-        <SectionLabel>POSIZIONE</SectionLabel>
-        <Row><Num label="X" k="x"/><Num label="Y" k="y"/><Num label="Z" k="z"/></Row>
-      </div>
-
-      {/* Rotation */}
-      <div>
-        <SectionLabel>ROTAZIONE °</SectionLabel>
-        <Row><Num label="RX" k="rx" step={1}/><Num label="RY" k="ry" step={1}/><Num label="RZ" k="rz" step={1}/></Row>
-      </div>
+      <div><SectionLabel>POSIZIONE</SectionLabel><Row><Num label="X" k="x"/><Num label="Y" k="y"/><Num label="Z" k="z"/></Row></div>
+      <div><SectionLabel>ROTAZIONE °</SectionLabel><Row><Num label="RX" k="rx" step={1}/><Num label="RY" k="ry" step={1}/><Num label="RZ" k="rz" step={1}/></Row></div>
     </div>
   )
 }
@@ -1243,12 +911,9 @@ function JSONTab({ editing }) {
   const json = {
     v:1,
     meta:{ name:editing.name, generated_by:'manual' },
-    stats:{ health:editing.health, speed:editing.speed, damage:editing.damage,
-      behavior:editing.behavior, sight_range:editing.sight_range, attack_range:editing.attack_range },
-    resistances:editing.resistances,
-    geometry:editing.geometry,
-    sounds:editing.sounds,
-    lore:editing.lore,
+    geometry: editing.geometry,
+    sounds:   editing.sounds,
+    lore:     editing.lore,
   }
   return (
     <pre style={{ color:'#997755', fontSize:10, fontFamily:'monospace', whiteSpace:'pre-wrap',
@@ -1258,7 +923,7 @@ function JSONTab({ editing }) {
   )
 }
 
-// ── SFX tab ───────────────────────────────────────────────────────────────────
+// ── SFX tab (un solo suono: proximity) ────────────────────────────────────────
 const WAVE_LABEL   = { saw:'sega', square:'quadra', tri:'triangolo', sine:'sinusoide' }
 const FILTER_LABEL = { lp:'LP', hp:'HP', bp:'BP' }
 const NOISE_LABEL  = { brown:'marrone', pink:'rosa', white:'bianco' }
@@ -1279,131 +944,44 @@ function layerDesc(l) {
   return `rumore ${nc}${flt}`
 }
 
-function sfxRng() {
-  let s = (Math.random() * 0xFFFFFFFF) | 0
-  return () => { s = (s * 1664525 + 1013904223) | 0; return (s >>> 0) / 0xFFFFFFFF }
-}
-
 function SfxTab({ sounds, setSounds }) {
-  const alertHandleRef = useRef(null)
-  const loopHandleRef  = useRef(null)
-  const [alertPlaying, setAlertPlaying] = useState(false)
-  const [loopPlaying,  setLoopPlaying]  = useState(false)
+  const loopHandleRef = useRef(null)
+  const [loopPlaying, setLoopPlaying] = useState(false)
 
-  // Cleanup on unmount or when sounds change
-  useEffect(() => () => {
-    alertHandleRef.current?.stop(); loopHandleRef.current?.stop()
-  }, [])
+  useEffect(() => () => { loopHandleRef.current?.stop() }, [])
 
-  if (!sounds) return null
+  if (!sounds?.proximity) return (
+    <div style={{ color:C.txtDim, fontSize:10, letterSpacing:2, textAlign:'center', padding:30 }}>
+      Nessun suono definito
+    </div>
+  )
 
-  const regenAlert = () => {
-    alertHandleRef.current?.stop(); alertHandleRef.current = null; setAlertPlaying(false)
-    setSounds({ alert: randomAlertSound(sfxRng()) })
-  }
-  const regenMovement = (cat) => {
+  const prox = sounds.proximity
+  const category = prox.category || 'fly'
+  const isContinuous = prox.continuous !== false
+  const bpm = prox.bpm
+
+  const regen = () => {
     loopHandleRef.current?.stop(); loopHandleRef.current = null; setLoopPlaying(false)
-    setSounds({ movement: randomMovementSound(sfxRng(), cat || sounds.movement?.category) })
+    setSounds({ proximity: randomMovementSound(sfxRng(), category) })
   }
   const setCategory = (cat) => {
     loopHandleRef.current?.stop(); loopHandleRef.current = null; setLoopPlaying(false)
-    setSounds({ movement: randomMovementSound(sfxRng(), cat) })
+    setSounds({ proximity: randomMovementSound(sfxRng(), cat) })
   }
-
-  const playAlert = () => {
-    alertHandleRef.current?.stop(); alertHandleRef.current = null
-    const handle = monsterSfx.playAlert(sounds.alert)
-    alertHandleRef.current = handle
-    setAlertPlaying(true)
-    setTimeout(() => { alertHandleRef.current = null; setAlertPlaying(false) },
-      ((sounds.alert?.dur || 1.5) * 1000) + 300)
-  }
-  const stopAlert = () => {
-    alertHandleRef.current?.stop(); alertHandleRef.current = null; setAlertPlaying(false)
-  }
-
   const toggleLoop = () => {
     if (loopPlaying) {
       loopHandleRef.current?.stop(); loopHandleRef.current = null; setLoopPlaying(false)
     } else {
-      const handle = monsterSfx.startMovementLoop(sounds.movement)
+      const handle = monsterSfx.startMovementLoop(prox)
       loopHandleRef.current = handle; setLoopPlaying(true)
     }
-  }
-  const alertMood    = sounds.alert?.mood || 'aggressive'
-  const movCat       = sounds.movement?.category || 'organic_walk'
-  const moodColor    = MOOD_COLORS[alertMood] || C.txtAccent
-  const isContinuous = sounds.movement?.continuous !== false  // fly/slide = true, walk = false
-  const movBpm    = sounds.movement?.bpm
-
-  const setAlertMood = (mood) => {
-    setSounds({ alert: { ...sounds.alert, mood } })
   }
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:18 }}>
-
-      {/* ── ALERT ── */}
       <div>
-        <SectionLabel>ALERT — ATTIVAZIONE</SectionLabel>
-        <div style={{ background:'#120600', border:`1px solid ${C.borderMed}`, padding:12, display:'flex', flexDirection:'column', gap:10 }}>
-
-          {/* Mood selector */}
-          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-            <span style={{ color:C.txtSub, fontSize:9, letterSpacing:2 }}>CARATTERE — salvato nel JSON</span>
-            <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
-              {Object.entries(MOOD_COLORS).map(([mood, col]) => {
-                const active = alertMood === mood
-                return (
-                  <button key={mood} onClick={() => setAlertMood(mood)}
-                    style={{ background: active ? col+'33' : 'transparent',
-                      border: `1px solid ${active ? col : C.border}`,
-                      color: active ? col : C.txtGhost,
-                      fontFamily:'monospace', fontSize:9, letterSpacing:1,
-                      padding:'3px 8px', cursor:'pointer', transition:'all 0.12s',
-                      fontWeight: active ? 'bold' : 'normal' }}
-                    onMouseEnter={e=>{ if(!active) Object.assign(e.currentTarget.style,{borderColor:col,color:col}) }}
-                    onMouseLeave={e=>{ if(!active) Object.assign(e.currentTarget.style,{borderColor:C.border,color:C.txtGhost}) }}>
-                    {mood.toUpperCase()}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Params row */}
-          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <span style={{ color:C.txtDim, fontSize:9 }}>
-              {((sounds.alert?.intensity||0)*100).toFixed(0)}% INT
-            </span>
-            <span style={{ color:C.txtGhost, fontSize:9 }}>{(sounds.alert?.dur||0).toFixed(1)}s</span>
-            {sounds.alert?.crush > 0.02 && <span style={{ color:'#aa6622', fontSize:9, border:'1px solid #442200', padding:'1px 5px' }}>CRUSH</span>}
-            {sounds.alert?.room  > 0.05 && <span style={{ color:'#4466aa', fontSize:9, border:'1px solid #223355', padding:'1px 5px' }}>ROOM</span>}
-          </div>
-
-          {/* Layers */}
-          <div style={{ display:'flex', flexDirection:'column', gap:2, paddingLeft:4,
-            borderLeft:`2px solid ${C.border}` }}>
-            {(sounds.alert?.layers||[]).map((l, i) => (
-              <div key={i} style={{ fontSize:9, color:C.txtGhost, fontFamily:'monospace' }}>
-                {i+1}. {layerDesc(l)}
-              </div>
-            ))}
-          </div>
-
-          {/* Buttons */}
-          <div style={{ display:'flex', gap:7 }}>
-            {alertPlaying
-              ? <SfxBtn onClick={stopAlert} stop>■ STOP</SfxBtn>
-              : <SfxBtn onClick={playAlert}>► ASCOLTA</SfxBtn>}
-            <SfxBtn onClick={regenAlert} accent>↺ RIGENERA</SfxBtn>
-          </div>
-        </div>
-      </div>
-
-      {/* ── MOVIMENTO ── */}
-      <div>
-        <SectionLabel>MOVIMENTO</SectionLabel>
+        <SectionLabel>SUONO DI PROSSIMITÀ</SectionLabel>
         <div style={{ background:'#120600', border:`1px solid ${C.borderMed}`, padding:12, display:'flex', flexDirection:'column', gap:10 }}>
 
           {/* Category */}
@@ -1411,7 +989,7 @@ function SfxTab({ sounds, setSounds }) {
             <span style={{ color:C.txtSub, fontSize:9, letterSpacing:2 }}>TIPO — salvato nel JSON</span>
             <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
               {MOVEMENT_CATEGORIES.map(({ value, label, icon }) => {
-                const active = movCat === value
+                const active = category === value
                 return (
                   <button key={value} onClick={() => setCategory(value)}
                     style={{ background: active ? C.redGhost : 'transparent',
@@ -1429,7 +1007,7 @@ function SfxTab({ sounds, setSounds }) {
             </div>
           </div>
 
-          {/* Mode badge + BPM + rhythm info */}
+          {/* Mode badge + BPM */}
           <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
             {isContinuous
               ? <span style={{ fontSize:9, letterSpacing:2, padding:'2px 8px',
@@ -1441,41 +1019,34 @@ function SfxTab({ sounds, setSounds }) {
                     background:'#1a0800', border:`1px solid ${C.redDim}`, color:C.txtMain }}>
                     ♩ LOOP RITMICO
                   </span>
-                  {movBpm && (
+                  {bpm && (
                     <span style={{ fontSize:9, letterSpacing:1, padding:'2px 8px',
                       background:'#100500', border:`1px solid ${C.border}`, color:C.txtAccent, fontFamily:'monospace' }}>
-                      {movBpm|0} BPM
+                      {bpm|0} BPM
                     </span>
                   )}
-                  {sounds.movement?.rhythm?.pattern && (
-                    <span style={{ color:C.txtGhost, fontSize:10, fontFamily:'monospace' }}>
-                      [{(sounds.movement.rhythm.pattern).map(v=>v===0?'·':v===1?'█':'▄').join('')}]
-                    </span>
-                  )}
-                </>
-            }
+                </>}
           </div>
 
           {/* Layers */}
           <div style={{ display:'flex', flexDirection:'column', gap:2, paddingLeft:4,
             borderLeft:`2px solid ${C.border}` }}>
-            {(sounds.movement?.layers||[]).map((l, i) => (
+            {(prox.layers||[]).map((l, i) => (
               <div key={i} style={{ fontSize:9, color:C.txtGhost, fontFamily:'monospace' }}>
                 {i+1}. {layerDesc(l)}
               </div>
             ))}
           </div>
 
-          {/* Buttons — tutti i movimenti sono loop */}
+          {/* Buttons */}
           <div style={{ display:'flex', gap:7 }}>
             <SfxBtn onClick={toggleLoop} stop={loopPlaying}>
-              {loopPlaying ? '■ STOP LOOP' : '► ASCOLTA LOOP'}
+              {loopPlaying ? '■ STOP' : '► ASCOLTA'}
             </SfxBtn>
-            <SfxBtn onClick={() => regenMovement()} accent>↺ RIGENERA</SfxBtn>
+            <SfxBtn onClick={regen} accent>↺ RIGENERA</SfxBtn>
           </div>
         </div>
       </div>
-
     </div>
   )
 }
@@ -1496,10 +1067,223 @@ function SfxBtn({ onClick, children, accent, stop: isStop }) {
   )
 }
 
-// ── Shared micro-components ───────────────────────────────────────────────────
-function Label({ children }) {
-  return <div style={{ color:C.txtSub, fontSize:10, letterSpacing:2, marginBottom:2 }}>{children}</div>
+// ── AI tab ────────────────────────────────────────────────────────────────────
+function ChainStep({ step }) {
+  const [open, setOpen] = useState(null) // null | 'system' | 'user' | 'response'
+  const toggle = (k) => setOpen(v => v === k ? null : k)
+  const blockStyle = (active) => ({
+    background: active ? '#0a1200' : '#080500',
+    border: `1px solid ${active ? '#336622' : C.border}`,
+    padding:'8px 10px', color: active ? '#99cc66' : C.txtGhost,
+    fontSize:9, fontFamily:'monospace', whiteSpace:'pre-wrap',
+    lineHeight:1.6, maxHeight:220, overflowY:'auto', marginTop:4,
+  })
+  const btnStyle = (k) => ({
+    background: open === k ? '#0d1a00' : 'transparent',
+    border: `1px solid ${open === k ? '#335511' : C.border}`,
+    color: open === k ? '#88bb44' : C.txtGhost,
+    fontFamily:'monospace', fontSize:9, letterSpacing:1,
+    padding:'3px 9px', cursor:'pointer', transition:'all 0.1s',
+  })
+  const colorStep = step.step === 1 ? '#aa8833' : '#3388aa'
+  return (
+    <div style={{ border:`1px solid ${C.border}`, background:'#080502', marginBottom:8 }}>
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 10px',
+        borderBottom:`1px solid ${C.border}`, background:'#0c0804' }}>
+        <span style={{ background:colorStep, color:'#000', fontFamily:'monospace',
+          fontSize:9, fontWeight:'bold', padding:'1px 7px', letterSpacing:1, flexShrink:0 }}>
+          STEP {step.step}
+        </span>
+        <span style={{ color:C.txtMain, fontSize:10, letterSpacing:2, flex:1 }}>
+          {step.label.toUpperCase()}
+        </span>
+      </div>
+      {/* Toggle buttons */}
+      <div style={{ display:'flex', gap:4, padding:'7px 10px', flexWrap:'wrap' }}>
+        {[['system','SYSTEM PROMPT'],['user','USER PROMPT'],['response','RISPOSTA']].map(([k, label]) => (
+          <button key={k} onClick={() => toggle(k)} style={btnStyle(k)}
+            onMouseEnter={e=>{ if(open!==k) Object.assign(e.currentTarget.style,{borderColor:C.borderMed,color:C.txtDim}) }}
+            onMouseLeave={e=>{ if(open!==k) Object.assign(e.currentTarget.style,{borderColor:C.border,color:C.txtGhost}) }}>
+            {open === k ? '▲' : '▼'} {label}
+          </button>
+        ))}
+      </div>
+      {/* Content blocks */}
+      {open && (
+        <div style={{ padding:'0 10px 10px' }}>
+          <pre className="se-scroll" style={blockStyle(true)}>
+            {step[open]}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
 }
+
+function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
+  const [desc,   setDesc]   = useState('')
+  const [phase,  setPhase]  = useState('idle')
+  const [chain,  setChain]  = useState([])
+  const [result, setResult] = useState(null)
+  const [errMsg, setErrMsg] = useState('')
+
+  const generate = async () => {
+    if (!desc.trim() || phase === 'step1' || phase === 'step2') return
+    setPhase('step1'); setChain([]); setResult(null); setErrMsg('')
+    try {
+      const res = await fetch('/api/ai/generate-supply', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: desc }),
+      })
+      setPhase('step2')
+      const data = await res.json()
+      if (data.chain) setChain(data.chain)
+      if (!res.ok) { setPhase('error'); setErrMsg(data.error || 'Errore sconosciuto'); return }
+      setResult({ name: data.name, geometry: data.geometry })
+      setPhase('done')
+    } catch (err) {
+      setPhase('error'); setErrMsg(err.message)
+    }
+  }
+
+  const loading = phase === 'step1' || phase === 'step2'
+
+  return (
+    <div style={{ width:'100%', maxWidth:680, display:'flex', flexDirection:'column', gap:0 }}>
+
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:24 }}>
+        <span style={{ color:'#66aaff', fontSize:22 }}>✦</span>
+        <span style={{ color:'#88ccff', fontSize:13, letterSpacing:4, fontFamily:'monospace' }}>
+          GENERA CON GEMINI AI
+        </span>
+      </div>
+
+      {/* Description input */}
+      <div style={{ display:'flex', flexDirection:'column', gap:7, marginBottom:16 }}>
+        <span style={{ color:C.txtSub, fontSize:10, letterSpacing:2, fontFamily:'monospace' }}>
+          DESCRIVI LA FORNITURA
+        </span>
+        <textarea
+          value={desc}
+          onChange={e => setDesc(e.target.value)}
+          autoFocus
+          placeholder="es. una sedia da trono con schienale ornato e braccioli in osso, un altare di pietra nera con incisioni runiche e candele, un barile di metallo ossidato con cerchi arrugginiti..."
+          rows={5}
+          style={{ background:'#0a0700', border:`1px solid #334422`,
+            color:'#ccddaa', fontFamily:'monospace', fontSize:12,
+            padding:'12px 14px', outline:'none', resize:'vertical',
+            width:'100%', boxSizing:'border-box', lineHeight:1.7 }}
+          onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) generate() }}
+        />
+        <span style={{ color:'#334433', fontSize:9, letterSpacing:1, fontFamily:'monospace' }}>
+          Ctrl+Invio per generare
+        </span>
+      </div>
+
+      {/* Generate button */}
+      <button onClick={generate} disabled={!desc.trim() || loading}
+        style={{ background: loading ? '#0a1400' : '#1a4a00',
+          border:`1px solid ${loading ? '#224422' : '#44aa00'}`,
+          color: loading ? '#446644' : '#aaff44',
+          fontFamily:'monospace', fontSize:12, letterSpacing:4,
+          padding:'13px 0', cursor: loading ? 'default' : 'pointer',
+          transition:'all 0.15s', opacity: !desc.trim() ? 0.35 : 1,
+          marginBottom:20 }}
+        onMouseEnter={e=>{ if(!loading&&desc.trim()) Object.assign(e.currentTarget.style,{background:'#224400',borderColor:'#88ff00',color:'#ccff66'}) }}
+        onMouseLeave={e=>{ if(!loading&&desc.trim()) Object.assign(e.currentTarget.style,{background:'#1a4a00',borderColor:'#44aa00',color:'#aaff44'}) }}>
+        {loading ? '...' : '✦ GENERA GEOMETRIA'}
+      </button>
+
+      {/* Progress */}
+      {loading && (
+        <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:16 }}>
+          {[['step1','ESPANSIONE DESCRIZIONE — Gemini elabora il concept 3D'],
+            ['step2','GENERAZIONE JSON — Gemini costruisce la geometria']].map(([s, label], i) => {
+            const active = phase === s
+            const done   = phase === 'step2' && i === 0
+            return (
+              <div key={s} style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <div style={{ width:10, height:10, borderRadius:'50%', flexShrink:0, transition:'all 0.3s',
+                  background: active ? '#88ff44' : done ? '#336633' : '#1a1a1a',
+                  boxShadow: active ? '0 0 10px #88ff44' : 'none' }} />
+                <span style={{ fontSize:10, letterSpacing:2, fontFamily:'monospace',
+                  color: active ? '#aaff66' : done ? '#558844' : '#333' }}>
+                  {label}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Chain */}
+      {chain.length > 0 && (
+        <div style={{ marginBottom:16 }}>
+          <div style={{ color:'#446644', fontSize:9, letterSpacing:3, fontFamily:'monospace',
+            borderBottom:'1px solid #1a2a1a', paddingBottom:6, marginBottom:10 }}>
+            CHAIN DI CHIAMATE
+          </div>
+          {chain.map(step => <ChainStep key={step.step} step={step} />)}
+        </div>
+      )}
+
+      {/* Error */}
+      {phase === 'error' && (
+        <div style={{ background:'#1a0000', border:`1px solid ${C.redDim}`,
+          padding:'12px 14px', color:'#ff5533', fontSize:10,
+          fontFamily:'monospace', lineHeight:1.6, marginBottom:16 }}>
+          ERRORE: {errMsg}
+        </div>
+      )}
+
+      {/* Result */}
+      {phase === 'done' && result && (
+        <div style={{ background:'#071200', border:`1px solid #224422`,
+          padding:'12px 14px', marginBottom:16,
+          display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <div>
+            <div style={{ color:'#88ff66', fontSize:12, letterSpacing:2, fontFamily:'monospace', marginBottom:4 }}>
+              {result.name}
+            </div>
+            <div style={{ color:'#446633', fontSize:9, letterSpacing:2, fontFamily:'monospace' }}>
+              {result.geometry?.parts?.length ?? 0} PARTI GENERATE
+            </div>
+          </div>
+          <button onClick={() => onApply(result.name, result.geometry)}
+            style={{ background:'#002244', border:`1px solid #2266aa`,
+              color:'#66aaff', fontFamily:'monospace', fontSize:11,
+              letterSpacing:3, padding:'10px 22px', cursor:'pointer', transition:'all 0.15s' }}
+            onMouseEnter={e=>Object.assign(e.currentTarget.style,{background:'#003366',borderColor:'#44aaff',color:'#aaddff'})}
+            onMouseLeave={e=>Object.assign(e.currentTarget.style,{background:'#002244',borderColor:'#2266aa',color:'#66aaff'})}>
+            ✓ CREA
+          </button>
+        </div>
+      )}
+
+      {/* Nav buttons */}
+      <div style={{ display:'flex', gap:10, marginTop:4 }}>
+        <button onClick={onBack}
+          style={{ flex:1, background:'transparent', border:`1px solid ${C.borderMed}`, color:C.txtDim,
+            fontFamily:'monospace', fontSize:10, letterSpacing:3, padding:'8px 0', cursor:'pointer' }}
+          onMouseEnter={e=>Object.assign(e.currentTarget.style,{borderColor:C.txtSub,color:C.txtSub})}
+          onMouseLeave={e=>Object.assign(e.currentTarget.style,{borderColor:C.borderMed,color:C.txtDim})}>
+          ← TEMPLATE
+        </button>
+        <button onClick={onCancel}
+          style={{ flex:1, background:'transparent', border:`1px solid ${C.border}`, color:'#333',
+            fontFamily:'monospace', fontSize:10, letterSpacing:3, padding:'8px 0', cursor:'pointer' }}
+          onMouseEnter={e=>Object.assign(e.currentTarget.style,{borderColor:C.red,color:C.txtAccent})}
+          onMouseLeave={e=>Object.assign(e.currentTarget.style,{borderColor:C.border,color:'#333'})}>
+          ANNULLA
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function SectionLabel({ children }) {
   return <div style={{ color:C.txtDim, fontSize:10, letterSpacing:2, marginBottom:7,
     borderBottom:`1px solid ${C.border}`, paddingBottom:4 }}>{children}</div>

@@ -211,7 +211,6 @@ function makeParticles(scene) {
     pos[i*3+1] = rng() * 22
     pos[i*3+2] = (rng()-0.5)*180
     spd[i]     = 0.014 + rng()*0.028
-    // Color: dark smoke (brown/grey) with occasional ember (orange)
     const ember = rng() > 0.85
     col[i*3]   = ember ? 0.90 : 0.22 + rng()*0.15
     col[i*3+1] = ember ? 0.28 : 0.10 + rng()*0.08
@@ -234,7 +233,7 @@ function makeParticles(scene) {
   return pts
 }
 
-// ── Monster mesh helpers ──────────────────────────────────────────────────────
+// ── Part mesh helpers ─────────────────────────────────────────────────────────
 function makeMesh(part) {
   const c = (v, min = 0.02) => Math.max(min, v || 0)
   let geo
@@ -287,87 +286,6 @@ function extractDimsFromScale(mesh) {
   return dims
 }
 
-// ── Overlay helpers ───────────────────────────────────────────────────────────
-function makeSphereOverlay(radius, color, cy=1.0, opacity=0.35) {
-  const geo  = new THREE.SphereGeometry(radius, 20, 12)
-  const wire = new THREE.WireframeGeometry(geo)
-  const mesh = new THREE.LineSegments(wire,
-    new THREE.LineBasicMaterial({ color, transparent:true, opacity, depthWrite:false }))
-  mesh.position.y = cy
-  geo.dispose()
-  return mesh
-}
-
-function makeFovFrustum(eyePt, lookDir, range, fovH, fovV, color) {
-  const fwd = new THREE.Vector3(lookDir.x||0, lookDir.y||0, lookDir.z||1).normalize()
-  const worldUp = Math.abs(fwd.y) > 0.9 ? new THREE.Vector3(0,0,1) : new THREE.Vector3(0,1,0)
-  const right = new THREE.Vector3().crossVectors(worldUp, fwd).normalize()
-  const up    = new THREE.Vector3().crossVectors(fwd, right).normalize()
-  const hH = Math.tan((fovH/2)*DEG)*range, hV = Math.tan((fovV/2)*DEG)*range
-  const eye = new THREE.Vector3(eyePt.x||0, eyePt.y||1.75, eyePt.z||0)
-  const tip = eye.clone().addScaledVector(fwd, range)
-  const tl = tip.clone().addScaledVector(right,-hH).addScaledVector(up, hV)
-  const tr = tip.clone().addScaledVector(right, hH).addScaledVector(up, hV)
-  const bl = tip.clone().addScaledVector(right,-hH).addScaledVector(up,-hV)
-  const br = tip.clone().addScaledVector(right, hH).addScaledVector(up,-hV)
-  const pts = [eye,tl, eye,tr, eye,bl, eye,br, tl,tr, tr,br, br,bl, bl,tl]
-  return new THREE.LineSegments(
-    new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color, transparent:true, opacity:0.55, depthWrite:false }))
-}
-
-function makeSightSphere(range, color, eyePt={x:0,y:1.5,z:0}) {
-  const geo  = new THREE.SphereGeometry(range, 24, 14)
-  const wire = new THREE.WireframeGeometry(geo)
-  const mesh = new THREE.LineSegments(wire,
-    new THREE.LineBasicMaterial({ color, transparent:true, opacity:0.2, depthWrite:false }))
-  mesh.position.set(eyePt.x||0, eyePt.y||1.5, eyePt.z||0)
-  geo.dispose()
-  return mesh
-}
-
-function makeAnchorSphere(pos, color, size=0.07) {
-  const geo  = new THREE.SphereGeometry(size, 10, 8)
-  const mat  = new THREE.MeshLambertMaterial({ color, transparent:true, opacity:0.85 })
-  const mesh = new THREE.Mesh(geo, mat)
-  mesh.position.set(pos.x||0, pos.y||0, pos.z||0)
-  return mesh
-}
-
-function makeDirectionLine(from, dir, length, color) {
-  const start = new THREE.Vector3(from.x||0, from.y||0, from.z||0)
-  const fwd   = new THREE.Vector3(dir.x||0, dir.y||0, dir.z||1).normalize()
-  const end   = start.clone().addScaledVector(fwd, length)
-  return new THREE.LineSegments(
-    new THREE.BufferGeometry().setFromPoints([start, end]),
-    new THREE.LineBasicMaterial({ color, transparent:true, opacity:0.9 }))
-}
-
-function buildOverlays(stats, geometry) {
-  const group = new THREE.Group()
-  if (!stats) return group
-  const { sight_range=10, fov_angle=90, fov_angle_v=60, attack_range=2, attack_type='melee', ranged_range=15 } = stats
-  const anchors = geometry?.anchors
-  const eyePt   = anchors?.eye      || { x:0, y:1.75, z:0.24 }
-  const lookDir = anchors?.look_dir || { x:0, y:0,    z:1    }
-  const firePt  = anchors?.fire     || { x:0.51, y:0.97, z:0.3 }
-
-  if (fov_angle >= 359) {
-    group.add(makeSightSphere(sight_range, 0x4499ff, eyePt))
-  } else {
-    group.add(makeFovFrustum(eyePt, lookDir, sight_range, fov_angle, fov_angle_v, 0x4499ff))
-  }
-  group.add(makeSphereOverlay(attack_range, 0xff8800, 1.0, 0.4))
-  if (attack_type === 'mixed' && ranged_range > attack_range)
-    group.add(makeSphereOverlay(ranged_range, 0x44aadd, 1.0, 0.25))
-
-  group.add(new THREE.AxesHelper(0.45))
-  group.add(makeAnchorSphere(eyePt, 0x44ddff, 0.06))
-  group.add(makeDirectionLine(eyePt, lookDir, 0.5, 0x44ddff))
-  group.add(makeAnchorSphere(firePt, 0xffaa00, 0.07))
-  return group
-}
-
 // ── Thumbnail camera fit ──────────────────────────────────────────────────────
 function fitCameraToGroup(camera, group, aspect) {
   const meshes = group.children.filter(c => c.isMesh)
@@ -400,11 +318,11 @@ function fitCameraToGroup(camera, group, aspect) {
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
-export default function MonsterViewer({
+export default function SupplyViewer({
   geometry, onThumbnailCapture,
   selectedPartId, onPartSelect, onPartTransform,
   transformMode='translate', transformSpace='world',
-  stats=null, showOverlays=true, studioMode=false,
+  studioMode=false,
 }) {
   const mountRef           = useRef(null)
   const ctx                = useRef({})
@@ -412,15 +330,9 @@ export default function MonsterViewer({
   const onPartSelectRef    = useRef(onPartSelect)
   const onPartTransformRef = useRef(onPartTransform)
   const selectedPartIdRef  = useRef(selectedPartId)
-  const showOverlaysRef    = useRef(showOverlays)
   useEffect(() => { onPartSelectRef.current    = onPartSelect    }, [onPartSelect])
   useEffect(() => { onPartTransformRef.current = onPartTransform }, [onPartTransform])
   useEffect(() => { selectedPartIdRef.current  = selectedPartId  }, [selectedPartId])
-  useEffect(() => {
-    showOverlaysRef.current = showOverlays
-    const { overlayGroup } = ctx.current
-    if (overlayGroup) overlayGroup.visible = showOverlays
-  }, [showOverlays])
 
   // ── Studio mode toggle ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -474,38 +386,32 @@ export default function MonsterViewer({
     const camera = new THREE.PerspectiveCamera(45, W/H, 0.01, 2000)
 
     // ── Lighting ──────────────────────────────────────────────────────────────
-    // Ambient — hellish warmth, enough to see geometry
     const ambientLight = new THREE.AmbientLight('#331200', 2.2)
     scene.add(ambientLight)
 
-    // Primary lava glow from below (center)
     const lavaGlow = new THREE.PointLight('#ff4400', 6.0, 35)
     lavaGlow.position.set(0, -0.3, 0)
     scene.add(lavaGlow)
 
-    // Surrounding lava pool lights
     const poolLights = []
     ;[[-22,0,20],[22,0,20],[-18,0,-22],[20,0,-20]].forEach(([x,y,z]) => {
       const l = new THREE.PointLight('#ff3300', 3.5, 55)
       l.position.set(x, y, z); scene.add(l); poolLights.push(l)
     })
 
-    // Key directional from side (orange)
     const keyLight = new THREE.DirectionalLight('#ff8844', 2.5)
     keyLight.position.set(8, 14, 6)
     keyLight.castShadow = true
     keyLight.shadow.mapSize.set(1024, 1024)
     scene.add(keyLight)
 
-    // Secondary fill from front-left
     const fillLight = new THREE.DirectionalLight('#cc4400', 1.2)
     fillLight.position.set(-5, 8, 8); scene.add(fillLight)
 
-    // Rim light (deep red from behind)
     const rimLight = new THREE.DirectionalLight('#cc1800', 1.2)
     rimLight.position.set(-6, 8, -12); scene.add(rimLight)
 
-    // Studio white lights (sempre presenti, intensità gestita dal toggle)
+    // Studio white lights (intensità 0 default, gestite dal toggle)
     const studioTop  = new THREE.PointLight('#ffffff', 0, 10)
     studioTop.position.set(0, 5, 0); scene.add(studioTop)
     const studioFill = new THREE.DirectionalLight('#ffffff', 0)
@@ -519,12 +425,9 @@ export default function MonsterViewer({
     makeMountains(scene)
     const particles = makeParticles(scene)
 
-    // Monster group
+    // Supply group
     const group = new THREE.Group()
     scene.add(group)
-
-    const overlayGroup = new THREE.Group()
-    scene.add(overlayGroup)
 
     // ── TransformControls ─────────────────────────────────────────────────────
     const tc = new TransformControls(camera, canvas)
@@ -592,17 +495,14 @@ export default function MonsterViewer({
       raf = requestAnimationFrame(animate)
       const t = performance.now() / 1000
 
-      // Lava animation
       if (lavaMesh.visible) lavaMat.uniforms.time.value = t
 
-      // Lava glow flicker (solo in modalità infernale)
       const studio = ctx.current.studioModeActive
       if (!studio) {
         lavaGlow.intensity = 4.5 + Math.sin(t*4.1)*0.8 + Math.sin(t*7.3)*0.35
         gazeLamp.intensity = 1.5 + Math.sin(t*3.7)*0.5 + Math.sin(t*5.9)*0.2
       }
 
-      // Smoke / ember particles rise
       const ppos = particles.geometry.attributes.position
       const spd  = particles.userData.speeds
       for (let i = 0; i < ppos.count; i++) {
@@ -638,7 +538,7 @@ export default function MonsterViewer({
     requestAnimationFrame(onResize)
 
     ctx.current = {
-      renderer, scene, camera, group, overlayGroup, orbit, tc, el, lavaMat, lavaMesh, particles,
+      renderer, scene, camera, group, orbit, tc, el, lavaMat, lavaMesh, particles,
       ambientLight, lavaGlow, poolLights, keyLight, fillLight, rimLight, gazeLamp,
       studioTop, studioFill, studioRim,
     }
@@ -653,7 +553,6 @@ export default function MonsterViewer({
       canvas.removeEventListener('mouseleave', handleMouseLeave)
       tc.detach(); tc.dispose(); scene.remove(tc)
       group.children.slice().forEach(c => { c.geometry?.dispose(); c.material?.dispose() })
-      overlayGroup.children.slice().forEach(c => { c.geometry?.dispose(); c.material?.dispose() })
       renderer.dispose()
       if (el.contains(canvas)) el.removeChild(canvas)
     }
@@ -684,13 +583,11 @@ export default function MonsterViewer({
       setTimeout(() => {
         if (!renderer || !el) return
         const c = ctx.current
-        const { overlayGroup } = c
         const W = el.clientWidth, H = el.clientHeight
         const savedPos = camera.position.clone(), savedAspect = camera.aspect
         const selId = selectedPartIdRef.current
         const selMesh = selId ? meshMapRef.current[selId] : null
         if (selMesh) removeOutline(selMesh)
-        if (overlayGroup) overlayGroup.visible = false
 
         // Always render thumbnail with studio lighting
         const wasStudio = c.studioModeActive
@@ -742,22 +639,12 @@ export default function MonsterViewer({
         }
 
         if (selMesh) addOutline(selMesh)
-        if (overlayGroup) overlayGroup.visible = showOverlaysRef.current
         renderer.setSize(W, H, false)
         camera.position.copy(savedPos); camera.aspect = savedAspect; camera.updateProjectionMatrix()
         onThumbnailCapture(src)
       }, 150)
     }
   }, [geometry, onThumbnailCapture])
-
-  // ── Rebuild stat overlays ───────────────────────────────────────────────────
-  useEffect(() => {
-    const { overlayGroup } = ctx.current
-    if (!overlayGroup) return
-    overlayGroup.children.slice().forEach(c => { c.geometry?.dispose(); c.material?.dispose(); overlayGroup.remove(c) })
-    const built = buildOverlays(stats, geometry)
-    built.children.slice().forEach(c => { overlayGroup.add(c) })
-  }, [stats, geometry])
 
   // ── Selection highlight + TransformControls attach ──────────────────────────
   useEffect(() => {

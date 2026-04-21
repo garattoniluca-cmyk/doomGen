@@ -7,6 +7,7 @@ import GameScene     from './components/Game/GameScene.jsx'
 import MonsterEditor from './components/MonsterEditor/MonsterEditor.jsx'
 import SurfaceEditor from './components/SurfaceEditor/SurfaceEditor.jsx'
 import LevelEditor   from './components/LevelEditor/LevelEditor.jsx'
+import SupplyEditor  from './components/SupplyEditor/SupplyEditor.jsx'
 import AdminPanel    from './components/Admin/AdminPanel.jsx'
 import Footer        from './components/Footer/Footer.jsx'
 import { sfx }       from './utils/sfx.js'
@@ -81,6 +82,7 @@ function Layout() {
           <Route path="/monsters" element={<RequireAuth><MonsterEditor /></RequireAuth>} />
           <Route path="/surfaces" element={<RequireAuth><SurfaceEditor /></RequireAuth>} />
           <Route path="/levels"   element={<RequireAuth><LevelEditor /></RequireAuth>} />
+          <Route path="/supplies" element={<RequireAuth><SupplyEditor /></RequireAuth>} />
           <Route path="/admin"    element={<RequireAuth><AdminPanel /></RequireAuth>} />
         </Routes>
       </div>

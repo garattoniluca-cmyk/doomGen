@@ -61,6 +61,20 @@ const TABLES = [
     created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+  // Supplies (forniture — oggetti/arredi per popolare i livelli)
+  `CREATE TABLE IF NOT EXISTS supplies (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    user_id    INT NOT NULL,
+    name       VARCHAR(255) NOT NULL,
+    geometry   JSON         DEFAULT NULL,
+    sounds     JSON         DEFAULT NULL,
+    thumbnail  MEDIUMTEXT   DEFAULT NULL,
+    lore       TEXT         DEFAULT NULL,
+    active     TINYINT NOT NULL DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
 ]
 
 export async function initDB() {

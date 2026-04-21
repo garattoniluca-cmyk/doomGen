@@ -8,7 +8,7 @@ const EDITORS = [
   { label: 'MOSTRI',    desc: 'Crea e configura i nemici del gioco',        path: '/monsters', img: '/card-mostri.png' },
   { label: 'SUPERFICI', desc: 'Texture per muri, pavimenti e soffitti',     path: '/surfaces', img: '/card-superfici.png' },
   { label: 'LIVELLI',   desc: 'Disegna e genera le mappe di gioco',         path: '/levels',   img: '/card-livelli.png' },
-  { label: 'FORNITURE', desc: 'Oggetti e prop per popolare i livelli',       path: null,        img: null },
+  { label: 'FORNITURE', desc: 'Oggetti e prop per popolare i livelli',       path: '/supplies', img: null },
   { label: 'SKYBOXES',  desc: 'Ambienti, cieli e fondali atmosferici',      path: null,        img: null },
   { label: 'FX / MUSIC',desc: 'Effetti sonori e musica procedurale',        path: null,        img: null },
 ]
