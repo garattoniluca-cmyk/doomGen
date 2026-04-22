@@ -319,7 +319,7 @@ function fitCameraToGroup(camera, group, aspect) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function SupplyViewer({
-  geometry, onThumbnailCapture,
+  geometry, scale=1.0, onThumbnailCapture,
   selectedPartId, onPartSelect, onPartTransform,
   transformMode='translate', transformSpace='world',
   studioMode=false,
@@ -452,16 +452,37 @@ export default function SupplyViewer({
     })
 
     // ── Orbit ─────────────────────────────────────────────────────────────────
-    const orbit = { theta: THUMB.theta, phi: THUMB.phi, r: THUMB.r, dragging: false, lx:0, ly:0, sx:0, sy:0, locked: false }
+    const orbit = {
+      theta: THUMB.theta, phi: THUMB.phi, r: THUMB.r,
+      targetY: 0.5,          // punto di mira verticale — aggiornato automaticamente al caricamento
+      dragging: false, panning: false,
+      lx:0, ly:0, sx:0, sy:0, locked: false
+    }
 
-    const handleMouseDown = e => { orbit.dragging=true; orbit.lx=e.clientX; orbit.ly=e.clientY; orbit.sx=e.clientX; orbit.sy=e.clientY }
+    const handleMouseDown = e => {
+      if (e.button === 2) {
+        // tasto destro = pan verticale
+        orbit.panning = true
+        orbit.ly = e.clientY
+        e.preventDefault()
+        return
+      }
+      orbit.dragging=true; orbit.lx=e.clientX; orbit.ly=e.clientY; orbit.sx=e.clientX; orbit.sy=e.clientY
+    }
     const handleMouseMove = e => {
+      if (orbit.panning) {
+        // pan: trascina su/giù per spostare il punto di mira
+        orbit.targetY = Math.max(-2, Math.min(10, orbit.targetY - (e.clientY - orbit.ly) * orbit.r * 0.0012))
+        orbit.ly = e.clientY
+        return
+      }
       if (!orbit.dragging || orbit.locked) return
       orbit.theta -= (e.clientX-orbit.lx)*0.008
-      orbit.phi    = Math.max(0.04, Math.min(1.45, orbit.phi+(e.clientY-orbit.ly)*0.008))
+      orbit.phi    = Math.max(0.04, Math.min(1.52, orbit.phi+(e.clientY-orbit.ly)*0.008))
       orbit.lx=e.clientX; orbit.ly=e.clientY
     }
     const handleMouseUp = e => {
+      if (orbit.panning) { orbit.panning = false; return }
       orbit.dragging = false
       if (orbit.locked || !onPartSelectRef.current) return
       const dist = Math.hypot(e.clientX-orbit.sx, e.clientY-orbit.sy)
@@ -480,14 +501,16 @@ export default function SupplyViewer({
         if (partId) onPartSelectRef.current(partId)
       }
     }
-    const handleWheel      = e => { orbit.r = Math.max(1.2, Math.min(200, orbit.r*(1+e.deltaY*0.001))) }
-    const handleMouseLeave = () => { orbit.dragging = false }
+    const handleWheel        = e => { orbit.r = Math.max(0.4, Math.min(200, orbit.r*(1+e.deltaY*0.001))) }
+    const handleMouseLeave   = () => { orbit.dragging = false; orbit.panning = false }
+    const handleContextMenu  = e => e.preventDefault()
 
-    canvas.addEventListener('mousedown',  handleMouseDown)
-    canvas.addEventListener('mousemove',  handleMouseMove)
-    canvas.addEventListener('mouseup',    handleMouseUp)
-    canvas.addEventListener('wheel',      handleWheel, { passive: true })
-    canvas.addEventListener('mouseleave', handleMouseLeave)
+    canvas.addEventListener('mousedown',   handleMouseDown)
+    canvas.addEventListener('mousemove',   handleMouseMove)
+    canvas.addEventListener('mouseup',     handleMouseUp)
+    canvas.addEventListener('wheel',       handleWheel, { passive: true })
+    canvas.addEventListener('mouseleave',  handleMouseLeave)
+    canvas.addEventListener('contextmenu', handleContextMenu)
 
     // ── Render loop ───────────────────────────────────────────────────────────
     let raf
@@ -519,10 +542,10 @@ export default function SupplyViewer({
 
       camera.position.set(
         orbit.r * Math.sin(orbit.theta) * Math.cos(orbit.phi),
-        orbit.r * Math.sin(orbit.phi),
+        orbit.r * Math.sin(orbit.phi) + orbit.targetY,
         orbit.r * Math.cos(orbit.theta) * Math.cos(orbit.phi),
       )
-      camera.lookAt(0, 1.2, 0)
+      camera.lookAt(0, orbit.targetY, 0)
       renderer.render(scene, camera)
     }
     animate()
@@ -546,11 +569,12 @@ export default function SupplyViewer({
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('resize', onResize)
-      canvas.removeEventListener('mousedown',  handleMouseDown)
-      canvas.removeEventListener('mousemove',  handleMouseMove)
-      canvas.removeEventListener('mouseup',    handleMouseUp)
-      canvas.removeEventListener('wheel',      handleWheel)
-      canvas.removeEventListener('mouseleave', handleMouseLeave)
+      canvas.removeEventListener('mousedown',   handleMouseDown)
+      canvas.removeEventListener('mousemove',   handleMouseMove)
+      canvas.removeEventListener('mouseup',     handleMouseUp)
+      canvas.removeEventListener('wheel',       handleWheel)
+      canvas.removeEventListener('mouseleave',  handleMouseLeave)
+      canvas.removeEventListener('contextmenu', handleContextMenu)
       tc.detach(); tc.dispose(); scene.remove(tc)
       group.children.slice().forEach(c => { c.geometry?.dispose(); c.material?.dispose() })
       renderer.dispose()
@@ -578,6 +602,7 @@ export default function SupplyViewer({
         group.add(mesh)
         meshMapRef.current[part.id] = mesh
       })
+      // floor-snap e camera vengono aggiornati dall'effect [scale, geometry] che segue
     }
     if (onThumbnailCapture) {
       setTimeout(() => {
@@ -645,6 +670,53 @@ export default function SupplyViewer({
       }, 150)
     }
   }, [geometry, onThumbnailCapture])
+
+  // ── Apply scale + floor-snap al group ──────────────────────────────────────
+  // Gira ogni volta che cambia scale O geometry (per coerenza dopo rebuild meshes)
+  useEffect(() => {
+    const { group, orbit } = ctx.current
+    if (!group) return
+    const s = Math.max(0.001, scale || 1)
+    group.scale.setScalar(s)
+
+    // Il disco del pavimento del gazebo ha h=0.06 centrato a y=0.03 → top a y=0.06
+    // Gli oggetti devono essere snappati CON IL FONDO su questa quota, non su y=0
+    const FLOOR_TOP = 0.06
+
+    // Calcola il minY naturale (scale=1, group.pos=0) direttamente dai dati delle parti
+    // Formula: world_bottom = group.pos.y + partBottomLocal * scale = FLOOR_TOP
+    //          → group.pos.y = FLOOR_TOP - naturalMinY * scale
+    const parts = geometry?.parts || []
+    let naturalMinY = 0
+    if (parts.length) {
+      let minY = Infinity
+      parts.forEach(p => {
+        let bottom
+        if (p.shape === 'sphere')   bottom = (p.y || 0) - (p.r || 0)
+        else                        bottom = (p.y || 0) - (p.h || 0) / 2
+        minY = Math.min(minY, bottom)
+      })
+      naturalMinY = isFinite(minY) ? minY : 0
+    }
+    group.position.y = FLOOR_TOP - naturalMinY * s
+
+    // Aggiorna camera orbit per centrare la vista sull'oggetto scalato
+    if (orbit && parts.length) {
+      let maxY = -Infinity
+      parts.forEach(p => {
+        let top
+        if (p.shape === 'sphere')   top = (p.y || 0) + (p.r || 0)
+        else                        top = (p.y || 0) + (p.h || 0) / 2
+        maxY = Math.max(maxY, top)
+      })
+      const naturalH = isFinite(maxY) ? maxY - naturalMinY : 1
+      const scaledH  = naturalH * s
+      // scaledCenterY = FLOOR_TOP + metà altezza scalata
+      const scaledCenterY = FLOOR_TOP + (naturalH / 2) * s
+      orbit.targetY = scaledCenterY
+      orbit.r = Math.max(0.4, Math.min(200, scaledH * 2.2))
+    }
+  }, [scale, geometry])
 
   // ── Selection highlight + TransformControls attach ──────────────────────────
   useEffect(() => {

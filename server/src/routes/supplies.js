@@ -14,7 +14,7 @@ const parseJ = (val, fallback) => {
 router.get('/', requireAuth, async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT id, name, geometry, sounds, thumbnail, lore, created_at
+      `SELECT id, name, geometry, sounds, thumbnail, lore, scale, created_at
        FROM supplies WHERE user_id = ? AND active = 1 ORDER BY created_at DESC`,
       [req.user.id]
     )
@@ -22,6 +22,7 @@ router.get('/', requireAuth, async (req, res) => {
       ...r,
       geometry: parseJ(r.geometry, null),
       sounds:   parseJ(r.sounds, null),
+      scale:    r.scale ?? 1.0,
     })))
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -40,6 +41,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       ...row,
       geometry: parseJ(row.geometry, null),
       sounds:   parseJ(row.sounds, null),
+      scale:    row.scale ?? 1.0,
     })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -48,15 +50,16 @@ router.get('/:id', requireAuth, async (req, res) => {
 
 // POST /api/supplies — create
 router.post('/', requireAuth, async (req, res) => {
-  const { name, geometry, sounds, thumbnail, lore } = req.body
+  const { name, geometry, sounds, thumbnail, lore, scale } = req.body
   try {
     const [result] = await pool.query(
-      `INSERT INTO supplies (user_id, name, geometry, sounds, thumbnail, lore)
-       VALUES (?,?,?,?,?,?)`,
+      `INSERT INTO supplies (user_id, name, geometry, sounds, thumbnail, lore, scale)
+       VALUES (?,?,?,?,?,?,?)`,
       [req.user.id, name||'Senza nome',
        JSON.stringify(geometry||null),
        JSON.stringify(sounds||null),
-       thumbnail||null, lore||null]
+       thumbnail||null, lore||null,
+       scale ?? 1.0]
     )
     res.status(201).json({ id: result.insertId })
   } catch (err) {
@@ -66,16 +69,17 @@ router.post('/', requireAuth, async (req, res) => {
 
 // PUT /api/supplies/:id — update
 router.put('/:id', requireAuth, async (req, res) => {
-  const { name, geometry, sounds, thumbnail, lore } = req.body
+  const { name, geometry, sounds, thumbnail, lore, scale } = req.body
   try {
     const [result] = await pool.query(
       `UPDATE supplies SET
-         name=?, geometry=?, sounds=?, thumbnail=?, lore=?
+         name=?, geometry=?, sounds=?, thumbnail=?, lore=?, scale=?
        WHERE id=? AND user_id=?`,
       [name||'Senza nome',
        JSON.stringify(geometry||null),
        JSON.stringify(sounds||null),
        thumbnail||null, lore||null,
+       scale ?? 1.0,
        req.params.id, req.user.id]
     )
     if (result.affectedRows === 0) return res.status(404).json({ error: 'Non trovato o non autorizzato' })

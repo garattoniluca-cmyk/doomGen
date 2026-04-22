@@ -57,7 +57,35 @@ const DEFAULT_STATE = () => ({
   geometry: { v:1, parts: DEFAULT_GEOMETRY.parts.map(p => ({...p})) },
   lore: '',
   sounds: { proximity: defaultProximity() },
+  scale: 1.0,
 })
+
+// ── Bounding box naturale (senza scale) dalle parti ───────────────────────────
+function computeNaturalBBox(parts = []) {
+  let minX=Infinity, minY=Infinity, minZ=Infinity
+  let maxX=-Infinity, maxY=-Infinity, maxZ=-Infinity
+  parts.forEach(p => {
+    let hw, hh, hd
+    if (p.shape === 'sphere') {
+      hw = hh = hd = p.r || 0
+    } else if (p.shape === 'cylinder' || p.shape === 'cone') {
+      hw = hd = p.r || 0; hh = (p.h || 0) / 2
+    } else {
+      hw = (p.w || 0) / 2; hh = (p.h || 0) / 2; hd = (p.d || 0) / 2
+    }
+    minX = Math.min(minX, (p.x||0) - hw); maxX = Math.max(maxX, (p.x||0) + hw)
+    minY = Math.min(minY, (p.y||0) - hh); maxY = Math.max(maxY, (p.y||0) + hh)
+    minZ = Math.min(minZ, (p.z||0) - hd); maxZ = Math.max(maxZ, (p.z||0) + hd)
+  })
+  if (!isFinite(minX)) return { w:0, h:0, d:0 }
+  const r = v => Math.round(v * 1000) / 1000
+  return { w: r(maxX - minX), h: r(maxY - minY), d: r(maxZ - minZ) }
+}
+
+// Slider log: 0..1000 ↔ scale 0.01..10
+const SCALE_MIN = 0.01, SCALE_MAX = 10
+const scaleToSlider = s => Math.round((Math.log10(Math.max(SCALE_MIN, Math.min(SCALE_MAX, s))) - Math.log10(SCALE_MIN)) / (Math.log10(SCALE_MAX) - Math.log10(SCALE_MIN)) * 1000)
+const sliderToScale = v => parseFloat((Math.pow(10, Math.log10(SCALE_MIN) + v / 1000 * (Math.log10(SCALE_MAX) - Math.log10(SCALE_MIN)))).toFixed(4))
 
 const uid = () => Math.random().toString(36).slice(2,8)
 const newPart = () => ({ id:uid(), label:'Parte', shape:'box', w:0.5, h:0.5, d:0.5, r:0.25, x:0, y:0.25, z:0, rx:0, ry:0, rz:0, color:'#6b4a28' })
@@ -214,6 +242,7 @@ export default function SupplyEditor() {
       geometry: m.geometry || { v:1, parts:[] },
       lore: m.lore || '',
       sounds: m.sounds || { proximity: defaultProximity() },
+      scale: m.scale ?? 1.0,
     }
     curRef.current = s; savedRef.current = s; setEditing(s)
     _initSym(s.geometry?.parts || [])
@@ -231,6 +260,7 @@ export default function SupplyEditor() {
           geometry: { v:1, parts: tpl.geometry.parts.map(p => ({...p, id: uid()})) },
           lore: tpl.description || '',
           sounds: { proximity: defaultProximity() },
+          scale: 1.0,
         }
       : DEFAULT_STATE()
     curRef.current = s; savedRef.current = null; setEditing(s)
@@ -254,6 +284,7 @@ export default function SupplyEditor() {
         body: JSON.stringify({
           name: editing.name, geometry: editing.geometry,
           thumbnail, lore: editing.lore, sounds: editing.sounds,
+          scale: editing.scale ?? 1.0,
         }),
       })
       if (r.ok) {
@@ -280,6 +311,7 @@ export default function SupplyEditor() {
       geometry: { v:1, parts: (m.geometry?.parts || []).map(p => ({ ...p, id: uid() })) },
       lore: m.lore || '',
       sounds: m.sounds ? JSON.parse(JSON.stringify(m.sounds)) : { proximity: defaultProximity() },
+      scale: m.scale ?? 1.0,
     }
     curRef.current = s; savedRef.current = null; setEditing(s)
     _initSym(s.geometry?.parts || [])
@@ -430,7 +462,7 @@ export default function SupplyEditor() {
           ) : (
             <>
               <SupplyViewer
-                geometry={editing.geometry} onThumbnailCapture={setThumbnail}
+                geometry={editing.geometry} scale={editing.scale??1.0} onThumbnailCapture={setThumbnail}
                 selectedPartId={selectedPart}
                 onPartSelect={tab === 'geometry' ? handlePartSelect : null}
                 onPartTransform={handlePartTransform}
@@ -563,7 +595,7 @@ export default function SupplyEditor() {
 
               {/* ── Tab bar ── */}
               <div style={{ display:'flex', borderBottom:`1px solid ${C.border}`, flexShrink:0 }}>
-                {[['geometry','⬡','GEO'],['sfx','♪','SFX'],['json','{}','JSON']].map(([t,icon,l]) => {
+                {[['geometry','⬡','GEO'],['scala','⇔','SCALA'],['sfx','♪','SFX'],['json','{}','JSON']].map(([t,icon,l]) => {
                   const active = tab === t
                   return (
                     <div key={t} onClick={()=>{ setTab(t); if(t!=='geometry'){ setSelectedPart(null); setExpandedPart(null) } }}
@@ -589,6 +621,8 @@ export default function SupplyEditor() {
                   selectedPart={selectedPart} setSelectedPart={setSelectedPart}
                   symMap={symMapRef.current} symActive={symActive} onSymToggle={toggleSym}
                   onAdd={addPart} onAddPair={addSymPair} onDelete={delPart} onCopy={copyPart} onUpdate={setPart} onLiveUpdate={setPartLive} />}
+                {tab==='scala'    && <ScaleTab scale={editing.scale??1.0} parts={editing.geometry?.parts||[]}
+                  onChange={v=>set('scale', v)} />}
                 {tab==='sfx'      && <SfxTab sounds={editing.sounds} setSounds={setSounds} />}
                 {tab==='json'     && <JSONTab editing={editing} />}
               </div>
@@ -1067,6 +1101,128 @@ function SfxBtn({ onClick, children, accent, stop: isStop }) {
   )
 }
 
+// ── Scale tab ─────────────────────────────────────────────────────────────────
+const SCALE_PRESETS = [
+  { label:'MICRO',    desc:'soprammobile / decorazione', target: 0.12 },
+  { label:'PICCOLO',  desc:'oggetto da tavolo',          target: 0.35 },
+  { label:'STANDARD', desc:'arredamento normale',        target: 1.50 },
+  { label:'GRANDE',   desc:'statua / architettura',      target: 4.00 },
+]
+
+function ScaleTab({ scale, parts, onChange }) {
+  const bbox    = computeNaturalBBox(parts)
+  const naturalH = Math.max(bbox.w, bbox.h, bbox.d, 0.001)
+  const effW = (bbox.w * scale).toFixed(3)
+  const effH = (bbox.h * scale).toFixed(3)
+  const effD = (bbox.d * scale).toFixed(3)
+
+  const [inputVal, setInputVal] = useState(String(scale))
+
+  // Sync input se scale cambia dall'esterno
+  useEffect(() => { setInputVal(String(scale)) }, [scale])
+
+  const applyInput = () => {
+    const v = parseFloat(inputVal)
+    if (!isNaN(v) && v >= 0.001 && v <= 999) onChange(parseFloat(v.toFixed(4)))
+    else setInputVal(String(scale))
+  }
+
+  const Row = ({ label, value, unit='m', dim }) => (
+    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline',
+      padding:'4px 0', borderBottom:`1px solid ${C.border}` }}>
+      <span style={{ color:C.txtDim, fontSize:9, letterSpacing:2 }}>{label}</span>
+      <span style={{ color: dim ? C.txtSub : C.txtBright, fontSize:11, fontFamily:'monospace' }}>
+        {value} <span style={{ color:C.txtGhost, fontSize:9 }}>{unit}</span>
+      </span>
+    </div>
+  )
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+
+      {/* Dimensioni naturali */}
+      <div>
+        <div style={{ color:C.txtDim, fontSize:9, letterSpacing:3, marginBottom:8 }}>DIMENSIONI NATURALI (scala 1.0)</div>
+        <Row label="LARGHEZZA" value={bbox.w.toFixed(3)} dim />
+        <Row label="ALTEZZA"   value={bbox.h.toFixed(3)} dim />
+        <Row label="PROFOND."  value={bbox.d.toFixed(3)} dim />
+      </div>
+
+      {/* Scale control */}
+      <div>
+        <div style={{ color:C.txtDim, fontSize:9, letterSpacing:3, marginBottom:10 }}>SCALA DI GIOCO</div>
+        {/* Valore + input */}
+        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+          <div style={{ flex:1, textAlign:'center' }}>
+            <span style={{ color:C.txtAccent, fontSize:22, fontFamily:'monospace', fontWeight:'bold' }}>
+              {scale < 0.01 ? scale.toFixed(4) : scale < 0.1 ? scale.toFixed(3) : scale.toFixed(2)}
+            </span>
+            <span style={{ color:C.txtGhost, fontSize:10, marginLeft:5 }}>×</span>
+          </div>
+          <input
+            type="number" min="0.001" max="999" step="0.01"
+            value={inputVal}
+            onChange={e => setInputVal(e.target.value)}
+            onBlur={applyInput}
+            onKeyDown={e => { if (e.key === 'Enter') applyInput() }}
+            className="se-num"
+            style={{ width:80, background:C.bgInput, border:`1px solid ${C.borderMed}`,
+              color:C.txtBright, fontFamily:'monospace', fontSize:12,
+              padding:'5px 7px', outline:'none', textAlign:'right' }}
+          />
+        </div>
+        {/* Slider logaritmico */}
+        <input
+          type="range" min="0" max="1000" step="1"
+          value={scaleToSlider(scale)}
+          onChange={e => { const v = sliderToScale(Number(e.target.value)); onChange(v); setInputVal(String(v)) }}
+          style={{ width:'100%', accentColor: C.red, cursor:'pointer' }}
+        />
+        <div style={{ display:'flex', justifyContent:'space-between', marginTop:2 }}>
+          <span style={{ color:C.txtGhost, fontSize:8 }}>0.01×</span>
+          <span style={{ color:C.txtGhost, fontSize:8 }}>1×</span>
+          <span style={{ color:C.txtGhost, fontSize:8 }}>10×</span>
+        </div>
+      </div>
+
+      {/* Preset buttons */}
+      <div>
+        <div style={{ color:C.txtDim, fontSize:9, letterSpacing:3, marginBottom:8 }}>PRESET DIMENSIONE</div>
+        <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+          {SCALE_PRESETS.map(({ label, desc, target }) => {
+            const presetScale = parseFloat((target / naturalH).toFixed(4))
+            const effAtPreset = (naturalH * presetScale).toFixed(2)
+            return (
+              <button key={label} onClick={() => onChange(presetScale)}
+                style={{ display:'flex', justifyContent:'space-between', alignItems:'center',
+                  background: C.bgBtn, border:`1px solid ${C.borderMed}`, color:C.txtMain,
+                  fontFamily:'monospace', fontSize:10, padding:'7px 10px', cursor:'pointer',
+                  transition:'all 0.15s', letterSpacing:1 }}
+                onMouseEnter={e=>Object.assign(e.currentTarget.style,{background:'#2a0800',borderColor:C.red,color:C.txtAccent})}
+                onMouseLeave={e=>Object.assign(e.currentTarget.style,{background:C.bgBtn,borderColor:C.borderMed,color:C.txtMain})}>
+                <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-start', gap:1 }}>
+                  <span style={{ fontWeight:'bold', letterSpacing:2 }}>{label}</span>
+                  <span style={{ color:C.txtGhost, fontSize:8, letterSpacing:1 }}>{desc}</span>
+                </div>
+                <span style={{ color:C.txtSub, fontSize:10 }}>~{effAtPreset}m alt.</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Dimensioni effettive */}
+      <div style={{ background:C.bgCard, border:`1px solid ${C.borderMed}`, padding:'10px 12px' }}>
+        <div style={{ color:C.txtDim, fontSize:9, letterSpacing:3, marginBottom:8 }}>DIMENSIONI EFFETTIVE IN GIOCO</div>
+        <Row label="LARGHEZZA" value={effW} />
+        <Row label="ALTEZZA"   value={effH} />
+        <Row label="PROFOND."  value={effD} />
+      </div>
+
+    </div>
+  )
+}
+
 // ── AI tab ────────────────────────────────────────────────────────────────────
 function ChainStep({ step }) {
   const [open, setOpen] = useState(null) // null | 'system' | 'user' | 'response'
@@ -1085,7 +1241,7 @@ function ChainStep({ step }) {
     fontFamily:'monospace', fontSize:9, letterSpacing:1,
     padding:'3px 9px', cursor:'pointer', transition:'all 0.1s',
   })
-  const colorStep = step.step === 1 ? '#aa8833' : '#3388aa'
+  const colorStep = step.step === 0 ? '#88aa33' : step.step === 0.5 ? '#aa66cc' : step.step === 1 ? '#aa8833' : '#3388aa'
   return (
     <div style={{ border:`1px solid ${C.border}`, background:'#080502', marginBottom:8 }}>
       {/* Header */}
@@ -1128,27 +1284,87 @@ function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
   const [result, setResult] = useState(null)
   const [errMsg, setErrMsg] = useState('')
 
+  // Nuovi input
+  const [imageFile,    setImageFile]    = useState(null)  // File object
+  const [imagePreview, setImagePreview] = useState(null)  // data URL per <img>
+  const [imageBase64,  setImageBase64]  = useState(null)  // base64 puro (no data URI prefix)
+  const [imageMime,    setImageMime]    = useState(null)
+  const [useWebSearch, setUseWebSearch] = useState(false)
+  const [dragOver,     setDragOver]     = useState(false)
+  const fileInputRef = useRef(null)
+
+  const readImageFile = (file) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) { setErrMsg('Il file deve essere un\'immagine'); return }
+    if (file.size > 10 * 1024 * 1024) { setErrMsg('Immagine troppo grande (max 10MB)'); return }
+    setErrMsg('')
+    setImageFile(file)
+    setImageMime(file.type)
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const dataUrl = e.target.result
+      setImagePreview(dataUrl)
+      const b64 = dataUrl.split(',')[1]
+      setImageBase64(b64)
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const clearImage = () => {
+    setImageFile(null); setImagePreview(null); setImageBase64(null); setImageMime(null)
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const onDrop = (e) => {
+    e.preventDefault(); setDragOver(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) readImageFile(file)
+  }
+
   const generate = async () => {
-    if (!desc.trim() || phase === 'step1' || phase === 'step2') return
-    setPhase('step1'); setChain([]); setResult(null); setErrMsg('')
+    if (!desc.trim() || phase === 'step0' || phase === 'step1' || phase === 'step2') return
+    const hasImage = !!imageBase64
+    const firstPhase = useWebSearch ? 'step0' : (hasImage ? 'step05' : 'step1')
+    setPhase(firstPhase); setChain([]); setResult(null); setErrMsg('')
+
+    // avanza le fasi client-side in base al tempo (indicativo)
+    const phaseTimers = []
+    let t = 0
+    if (useWebSearch) {
+      t += 6000
+      phaseTimers.push(setTimeout(() => setPhase(p => p === 'step0' ? (hasImage ? 'step05' : 'step1') : p), t))
+    }
+    if (hasImage) {
+      t += 4000
+      phaseTimers.push(setTimeout(() => setPhase(p => p === 'step05' ? 'step1' : p), t))
+    }
+    t += 8000
+    phaseTimers.push(setTimeout(() => setPhase(p => p === 'step1' ? 'step2' : p), t))
+
     try {
       const res = await fetch('/api/ai/generate-supply', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: desc }),
+        body: JSON.stringify({
+          description: desc,
+          imageBase64: imageBase64 || undefined,
+          imageMime:   imageMime   || undefined,
+          useWebSearch,
+        }),
       })
-      setPhase('step2')
+      phaseTimers.forEach(clearTimeout)
       const data = await res.json()
       if (data.chain) setChain(data.chain)
       if (!res.ok) { setPhase('error'); setErrMsg(data.error || 'Errore sconosciuto'); return }
-      setResult({ name: data.name, geometry: data.geometry })
+      setResult({ name: data.name, geometry: data.geometry, autoImage: data.autoImage })
       setPhase('done')
     } catch (err) {
+      phaseTimers.forEach(clearTimeout)
       setPhase('error'); setErrMsg(err.message)
     }
   }
 
-  const loading = phase === 'step1' || phase === 'step2'
+  const loading = phase === 'step0' || phase === 'step05' || phase === 'step1' || phase === 'step2'
 
   return (
     <div style={{ width:'100%', maxWidth:680, display:'flex', flexDirection:'column', gap:0 }}>
@@ -1171,7 +1387,7 @@ function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
           onChange={e => setDesc(e.target.value)}
           autoFocus
           placeholder="es. una sedia da trono con schienale ornato e braccioli in osso, un altare di pietra nera con incisioni runiche e candele, un barile di metallo ossidato con cerchi arrugginiti..."
-          rows={5}
+          rows={4}
           style={{ background:'#0a0700', border:`1px solid #334422`,
             color:'#ccddaa', fontFamily:'monospace', fontSize:12,
             padding:'12px 14px', outline:'none', resize:'vertical',
@@ -1182,6 +1398,86 @@ function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
           Ctrl+Invio per generare
         </span>
       </div>
+
+      {/* Image drop zone */}
+      <div style={{ display:'flex', flexDirection:'column', gap:7, marginBottom:14 }}>
+        <span style={{ color:C.txtSub, fontSize:10, letterSpacing:2, fontFamily:'monospace' }}>
+          IMMAGINE DI RIFERIMENTO <span style={{ color:'#334433' }}>(opzionale)</span>
+        </span>
+        {imagePreview ? (
+          <div style={{ display:'flex', alignItems:'center', gap:12,
+            background:'#0a0700', border:`1px solid #334422`, padding:10 }}>
+            <img src={imagePreview} alt="riferimento"
+              style={{ width:80, height:80, objectFit:'cover', border:'1px solid #224422', flexShrink:0 }} />
+            <div style={{ flex:1, display:'flex', flexDirection:'column', gap:4, minWidth:0 }}>
+              <div style={{ color:'#aadd88', fontSize:11, fontFamily:'monospace', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                {imageFile?.name || 'immagine'}
+              </div>
+              <div style={{ color:'#446644', fontSize:9, letterSpacing:1, fontFamily:'monospace' }}>
+                {imageFile ? `${(imageFile.size/1024).toFixed(1)} KB · ${imageMime}` : ''}
+              </div>
+            </div>
+            <button onClick={clearImage}
+              style={{ background:'transparent', border:`1px solid ${C.redDim}`, color:C.red,
+                fontFamily:'monospace', fontSize:10, letterSpacing:2, padding:'6px 12px', cursor:'pointer' }}
+              onMouseEnter={e=>Object.assign(e.currentTarget.style,{background:'#2a0000',color:'#ff4433'})}
+              onMouseLeave={e=>Object.assign(e.currentTarget.style,{background:'transparent',color:C.red})}>
+              ✕ RIMUOVI
+            </button>
+          </div>
+        ) : (
+          <div
+            onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+            onClick={() => fileInputRef.current?.click()}
+            style={{
+              background: dragOver ? '#0f1a00' : '#0a0700',
+              border: `1px dashed ${dragOver ? '#66aa33' : '#334422'}`,
+              padding: '18px 14px', cursor:'pointer',
+              display:'flex', flexDirection:'column', alignItems:'center', gap:6,
+              transition:'all 0.15s' }}>
+            <div style={{ color: dragOver ? '#aaff66' : '#557744', fontSize:18 }}>⬆</div>
+            <div style={{ color: dragOver ? '#aaff66' : '#557744',
+              fontSize:11, letterSpacing:2, fontFamily:'monospace' }}>
+              TRASCINA UN'IMMAGINE QUI
+            </div>
+            <div style={{ color:'#334433', fontSize:9, letterSpacing:1, fontFamily:'monospace' }}>
+              (o clicca per selezionare · max 10MB)
+            </div>
+          </div>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display:'none' }}
+          onChange={e => readImageFile(e.target.files?.[0])}
+        />
+      </div>
+
+      {/* Web search toggle */}
+      <label style={{ display:'flex', alignItems:'center', gap:10, marginBottom:18, cursor:'pointer',
+        background: useWebSearch ? '#001a2a' : 'transparent',
+        border:`1px solid ${useWebSearch ? '#2266aa' : '#223344'}`,
+        padding:'10px 14px', transition:'all 0.15s' }}>
+        <input
+          type="checkbox"
+          checked={useWebSearch}
+          onChange={e => setUseWebSearch(e.target.checked)}
+          style={{ width:14, height:14, accentColor:'#4488cc', cursor:'pointer' }}
+        />
+        <div style={{ flex:1 }}>
+          <div style={{ color: useWebSearch ? '#88ccff' : '#557788',
+            fontSize:11, letterSpacing:2, fontFamily:'monospace' }}>
+            🔍 RICERCA RIFERIMENTI NEL WEB
+          </div>
+          <div style={{ color: useWebSearch ? '#446688' : '#334455',
+            fontSize:9, letterSpacing:1, fontFamily:'monospace', marginTop:2 }}>
+            Gemini cerca immagini/descrizioni con grounding prima di generare
+          </div>
+        </div>
+      </label>
 
       {/* Generate button */}
       <button onClick={generate} disabled={!desc.trim() || loading}
@@ -1200,10 +1496,16 @@ function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
       {/* Progress */}
       {loading && (
         <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:16 }}>
-          {[['step1','ESPANSIONE DESCRIZIONE — Gemini elabora il concept 3D'],
-            ['step2','GENERAZIONE JSON — Gemini costruisce la geometria']].map(([s, label], i) => {
+          {[
+            ...(useWebSearch ? [['step0','RICERCA WEB — Gemini cerca riferimenti con grounding']] : []),
+            ...(imageBase64 ? [['step05','ANALISI IMMAGINE — Gemini descrive soggetto, parti, proporzioni']] : []),
+            ['step1', (imageBase64 || useWebSearch) ? 'ESPANSIONE — Gemini progetta scheda tecnica 3D' : 'ESPANSIONE DESCRIZIONE — Gemini elabora il concept 3D'],
+            ['step2','GENERAZIONE JSON — Gemini costruisce la geometria']
+          ].map(([s, label], i, arr) => {
+            const idxCurrent = arr.findIndex(([k]) => k === phase)
+            const idxSelf    = i
             const active = phase === s
-            const done   = phase === 'step2' && i === 0
+            const done   = idxCurrent > idxSelf
             return (
               <div key={s} style={{ display:'flex', alignItems:'center', gap:10 }}>
                 <div style={{ width:10, height:10, borderRadius:'50%', flexShrink:0, transition:'all 0.3s',
@@ -1236,6 +1538,29 @@ function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
           padding:'12px 14px', color:'#ff5533', fontSize:10,
           fontFamily:'monospace', lineHeight:1.6, marginBottom:16 }}>
           ERRORE: {errMsg}
+        </div>
+      )}
+
+      {/* Auto-fetched reference image (dalla web search) */}
+      {phase === 'done' && result?.autoImage && (
+        <div style={{ background:'#00141f', border:`1px solid #2266aa`,
+          padding:10, marginBottom:12,
+          display:'flex', alignItems:'center', gap:12 }}>
+          <img src={result.autoImage.dataUrl} alt="riferimento auto"
+            style={{ width:60, height:60, objectFit:'cover', border:'1px solid #2266aa', flexShrink:0 }} />
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ color:'#88ccff', fontSize:10, letterSpacing:2, fontFamily:'monospace', marginBottom:3 }}>
+              🔍 IMMAGINE RIFERIMENTO SCARICATA DAL WEB
+            </div>
+            <a href={result.autoImage.url} target="_blank" rel="noopener noreferrer"
+              style={{ color:'#446688', fontSize:9, fontFamily:'monospace',
+                whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', display:'block', textDecoration:'underline' }}>
+              {result.autoImage.url}
+            </a>
+            <div style={{ color:'#334466', fontSize:9, letterSpacing:1, fontFamily:'monospace', marginTop:2 }}>
+              {result.autoImage.mime} · {(result.autoImage.size/1024).toFixed(1)} KB
+            </div>
+          </div>
         </div>
       )}
 
