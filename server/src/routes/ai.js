@@ -108,6 +108,18 @@ async function callLocalLM(systemText, userText, opts = {}) {
   const model  =  process.env.LM_STUDIO_MODEL  || 'qwen/qwen2.5-vl-7b'
   const url    = `${base}/v1/chat/completions`
 
+  // ── Parametri di inferenza configurabili via .env ─────────────────────────
+  // LM_STUDIO_TEMPERATURE   (default 0.7)  — casualità: 0=deterministico, 1=creativo, >1=caotico
+  // LM_STUDIO_MAX_TOKENS    (default 16384) — token massimi nella risposta; aumenta se la risposta viene troncata
+  // LM_STUDIO_TOP_P         (default 0.95)  — nucleus sampling: considera solo i token che coprono il top-P% di probabilità
+  // LM_STUDIO_TOP_K         (default 40)    — limita la scelta ai top-K token più probabili ad ogni passo
+  // LM_STUDIO_REPEAT_PENALTY (default 1.1) — penalizza ripetizioni: 1.0=nessuna, 1.1-1.3=consigliato, >1.5=aggressivo
+  const temperature     = parseFloat(process.env.LM_STUDIO_TEMPERATURE    ?? '0.7')
+  const max_tokens      = parseInt(  process.env.LM_STUDIO_MAX_TOKENS      ?? '16384', 10)
+  const top_p           = parseFloat(process.env.LM_STUDIO_TOP_P           ?? '0.95')
+  const top_k           = parseInt(  process.env.LM_STUDIO_TOP_K           ?? '40',    10)
+  const repeat_penalty  = parseFloat(process.env.LM_STUDIO_REPEAT_PENALTY  ?? '1.1')
+
   // Content del messaggio utente: testo + eventuale immagine
   let userContent
   if (opts.imageBase64) {
@@ -127,8 +139,11 @@ async function callLocalLM(systemText, userText, opts = {}) {
       { role: 'system', content: systemText },
       { role: 'user',   content: userContent },
     ],
-    temperature:  0.7,
-    max_tokens:   opts.maxOutputTokens || 32768,
+    temperature,
+    max_tokens:       opts.maxOutputTokens || max_tokens,
+    top_p,
+    top_k,
+    repeat_penalty,
   }
 
   let res
