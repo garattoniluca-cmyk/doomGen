@@ -243,10 +243,30 @@ function makeMesh(part) {
     case 'cone':     geo = new THREE.ConeGeometry(c(part.r, 0.05), c(part.h, 0.05), 14); break
     default:         geo = new THREE.BoxGeometry(c(part.w, 0.05), c(part.h, 0.05), c(part.d, 0.05))
   }
-  const mat  = new THREE.MeshLambertMaterial({ color: part.color || '#cc2200' })
+  const opacity = (part.opacity !== undefined && part.opacity < 1) ? Math.max(0.05, Number(part.opacity)) : 1
+  const mat  = new THREE.MeshLambertMaterial({
+    color: part.color || '#cc2200',
+    transparent: opacity < 1,
+    opacity,
+  })
   const mesh = new THREE.Mesh(geo, mat)
   mesh.position.set(part.x || 0, part.y || 0, part.z || 0)
   mesh.rotation.set((part.rx||0)*DEG, (part.ry||0)*DEG, (part.rz||0)*DEG)
+
+  // Scale non-uniforme per forme rotonde:
+  //   cylinder / cone : w = diametro x, d = diametro z  (se > 0 sovrascrive la base circolare)
+  //   sphere          : w = diametro x, h = diametro y, d = diametro z
+  if (part.shape === 'sphere') {
+    const baseD = c(part.r, 0.05) * 2
+    if (part.w > 0) mesh.scale.x = part.w / baseD
+    if (part.h > 0) mesh.scale.y = part.h / baseD
+    if (part.d > 0) mesh.scale.z = part.d / baseD
+  } else if (part.shape === 'cylinder' || part.shape === 'cone') {
+    const baseD = c(part.r, 0.05) * 2
+    if (part.w > 0) mesh.scale.x = part.w / baseD
+    if (part.d > 0) mesh.scale.z = part.d / baseD
+  }
+
   mesh.castShadow = true
   mesh.userData.partId = part.id
   mesh.userData.shape  = part.shape || 'box'
@@ -276,11 +296,30 @@ function extractDimsFromScale(mesh) {
   if (shape === 'box') {
     dims = { w: round(params.width*sc.x), h: round(params.height*sc.y), d: round(params.depth*sc.z) }
   } else if (shape === 'sphere') {
-    dims = { r: round(params.radius * ((sc.x+sc.y+sc.z)/3)) }
+    // Preserva scala per asse: w/h/d = diametri scalati; r rimane il raggio base della geometria
+    const baseD = params.radius * 2
+    dims = {
+      r: round(params.radius),
+      w: round(baseD * sc.x),
+      h: round(baseD * sc.y),
+      d: round(baseD * sc.z),
+    }
   } else if (shape === 'cylinder') {
-    dims = { r: round(params.radiusTop*((sc.x+sc.z)/2)), h: round(params.height*sc.y) }
+    const baseD = params.radiusTop * 2
+    dims = {
+      r: round(params.radiusTop),
+      w: round(baseD * sc.x),
+      d: round(baseD * sc.z),
+      h: round(params.height * sc.y),
+    }
   } else if (shape === 'cone') {
-    dims = { r: round(params.radius*((sc.x+sc.z)/2)), h: round(params.height*sc.y) }
+    const baseD = params.radius * 2
+    dims = {
+      r: round(params.radius),
+      w: round(baseD * sc.x),
+      d: round(baseD * sc.z),
+      h: round(params.height * sc.y),
+    }
   }
   mesh.scale.set(1, 1, 1)
   return dims
@@ -692,8 +731,13 @@ export default function SupplyViewer({
       let minY = Infinity
       parts.forEach(p => {
         let bottom
-        if (p.shape === 'sphere')   bottom = (p.y || 0) - (p.r || 0)
-        else                        bottom = (p.y || 0) - (p.h || 0) / 2
+        if (p.shape === 'sphere') {
+          // Se la sfera è scalata in y, usa h/2 come half-extent verticale
+          const halfY = (p.h > 0) ? p.h / 2 : (p.r || 0)
+          bottom = (p.y || 0) - halfY
+        } else {
+          bottom = (p.y || 0) - (p.h || 0) / 2
+        }
         minY = Math.min(minY, bottom)
       })
       naturalMinY = isFinite(minY) ? minY : 0
@@ -705,8 +749,12 @@ export default function SupplyViewer({
       let maxY = -Infinity
       parts.forEach(p => {
         let top
-        if (p.shape === 'sphere')   top = (p.y || 0) + (p.r || 0)
-        else                        top = (p.y || 0) + (p.h || 0) / 2
+        if (p.shape === 'sphere') {
+          const halfY = (p.h > 0) ? p.h / 2 : (p.r || 0)
+          top = (p.y || 0) + halfY
+        } else {
+          top = (p.y || 0) + (p.h || 0) / 2
+        }
         maxY = Math.max(maxY, top)
       })
       const naturalH = isFinite(maxY) ? maxY - naturalMinY : 1

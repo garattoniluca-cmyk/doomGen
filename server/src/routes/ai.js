@@ -168,6 +168,29 @@ function sanitizeJsonish(s) {
     .replace(/[\u2018\u2019]/g, "'")
 }
 
+function normalizeParts(parsed) {
+  const VALID_SHAPES = new Set(['box', 'sphere', 'cylinder', 'cone'])
+  return (parsed.parts || parsed).map((p, i) => ({
+    id:    p.id    || `p${String(i + 1).padStart(2, '0')}`,
+    label: p.label || `Parte ${i + 1}`,
+    shape: VALID_SHAPES.has(p.shape) ? p.shape : 'box',
+    w:     Number(p.w  ?? 0),
+    h:     Number(p.h  ?? 0),
+    d:     Number(p.d  ?? 0),
+    r:     Number(p.r  ?? 0),
+    x:     Number(p.x  ?? 0),
+    y:     Number(p.y  ?? 0),
+    z:     Number(p.z  ?? 0),
+    rx:    Number(p.rx ?? 0),
+    ry:    Number(p.ry ?? 0),
+    rz:    Number(p.rz ?? 0),
+    color: typeof p.color === 'string' && p.color.startsWith('#') ? p.color : '#6b4a28',
+    ...(p.opacity !== undefined && Number(p.opacity) < 1
+      ? { opacity: Math.max(0.05, Math.min(0.99, Number(p.opacity))) }
+      : {}),
+  }))
+}
+
 function tryParseJson(rawText) {
   const extracted = extractBalancedJson(rawText) || rawText
   // Primo tentativo: parse diretto
@@ -225,6 +248,68 @@ Le immagini devono essere il più rilevanti possibile per l'oggetto richiesto e 
 
 NON usare URL di pagine HTML (es. wikipedia.org/wiki/...) — solo link diretti a file immagine.`
 
+// ── Step 0.3: analisi strutturata del testo (solo quando NON c'è immagine) ────
+const SYSTEM_TEXT_ANALYSIS = `Sei un analista 3D esperto. Ti viene fornita una descrizione testuale di un oggetto da modellare come fornitura/prop per un videogioco infernale stile Doom.
+Il tuo compito è STRUTTURARE e ARRICCHIRE questa descrizione in modo preciso, come farebbe un art director che prepara un brief per un modellatore 3D.
+
+Rispondi in italiano con QUESTA struttura esatta (non aggiungere altro):
+
+═══ 1. SOGGETTO PRINCIPALE ═══
+Descrivi con precisione cosa va modellato (es. "colonna di pietra a blocchi squadrati con base e capitello", "trono di metallo arrugginito con schienale alto e braccioli").
+
+═══ 2. TIPO DI OGGETTO ═══
+Categoria: arredamento | illuminazione | architettura | arma | creatura | ornamento | contenitore | altro
+Sottotipo specifico (es. "colonna dorica", "trono regale", "barile standard").
+Oggetto singolo 3D: sì/no.
+
+═══ 3. SILHOUETTE E FORMA GENERALE ═══
+Forma complessiva (verticale/orizzontale/sferica/composita), asse di simmetria principale, proporzioni globali (snello/massiccio/squadrato/organico).
+
+═══ 4. COMPONENTI STRUTTURALI ═══
+Elenca TUTTE le parti distinte con:
+- Nome della parte
+- Forma geometrica più adatta: cubica/cilindrica/sferica/conica/anello
+- Proporzioni relative all'altezza totale
+- Posizione spaziale (base/centro/cima/laterale/frontale)
+- Se la parte è RIPETUTA (es. "4 gambe", "3 file di blocchi", "6 torce"): indica quante
+
+═══ 5. MATERIALI E TRAME ═══
+Per ogni componente principale indica il materiale e la sua caratteristica visiva.
+Se il materiale è PIETRA_BLOCCHI scrivi obbligatoriamente "FLAG: TEXTURE_PIETRA_BLOCCHI" accanto a quella parte.
+
+- PIETRA_BLOCCHI: blocchi squadrati visibili, giunture orizzontali e verticali → FLAG: TEXTURE_PIETRA_BLOCCHI — il fusto DEVE essere diviso in 4-6 segmenti con colori alternati (#2a2218 / #1e1a14) + giunture cylinder h=0.02
+- PIETRA_LISCIA: superficie uniforme levigata, nessuna giuntura visibile
+- LEGNO: venature marcate, nodi, variazione tono → segmenti a toni alternati (#3d2510 / #2a1a08)
+- METALLO_CORROSO: ossidazione, macchie di ruggine, graffi
+- CARNE_ORGANI: superficie umida, pulsante, vene visibili
+- CRISTALLO_VETRO: traslucido, angoli vivi, riflessi, opacity 0.45-0.65
+- FUOCO_FIAMMA: luminoso, gradient arancio→giallo, traslucido, opacity 0.55-0.70
+
+═══ 6. COLORI STIMATI PER PARTE ═══
+Per ogni parte: 2 colori hex specifici coerenti con ambientazione infernale.
+Esempio: "fusto colonna: #2a2218 (scuro) e #3d3428 (chiaro per highlights)", "capitello: #1e1a14"
+
+═══ 7. TRASPARENZE ═══
+Ci sono parti trasparenti o traslucide? (cristallo, vetro, fuoco, fumo, acqua, fiamme)
+Se sì, per ogni parte trasparente indica: nome + opacity consigliata (0.1=quasi invisibile, 0.4=vetro, 0.7=fumo leggero)
+Se nessuna trasparenza: scrivi "Nessuna parte trasparente."
+
+═══ 8. PROPORZIONI GLOBALI ═══
+Dimensioni reali stimate in metri: larghezza × profondità × altezza totale.
+Riferimento categoria (adatta se necessario):
+  Colonna standard: 0.5w × 0.5d × 3.3h | Colonna grande: 0.7w × 0.7d × 4.5h
+  Trono: 0.6w × 0.55d × 1.8h | Sedia: 0.5w × 0.5d × 0.9h
+  Barile: 0.65w × 0.65d × 0.85h | Torcia: 0.15w × 0.15d × 0.45h
+
+═══ 9. NOTE COSTRUTTIVE 3D ═══
+Istruzioni specifiche per la costruzione con primitive (box/cylinder/cone/sphere):
+- Dove usare SFERE (forme tondeggianti, vasi, capitelli a bulbo, gemme)
+- Dove usare CONI IN CATENA (forme affusolate, corna, punte, sommità appuntite)
+- Come simulare la TRAMA PIETRA A BLOCCHI: fusto colonna → 4-6 segmenti cylinder/box sovrapposti, colori alternati chiaro/scuro, leggermente diversi tra loro
+- Dove usare CILINDRI SOVRAPPOSTI (colonne, botti, gambe tornite)
+- Dove usare BOX (basi, capitelli squadrati, gradini, blocchi)
+- Eventuali rotazioni necessarie per parti inclinate`
+
 const SYSTEM_IMAGE_ANALYSIS = `Sei un analista visivo esperto. Ti viene fornita un'immagine di riferimento.
 Il tuo compito è descriverla in modo ESTREMAMENTE dettagliato e strutturato, così che un artista 3D possa ricostruirla fedelmente in primitive geometriche.
 
@@ -246,6 +331,17 @@ Elenca TUTTE le parti visibili con proporzioni relative. Per ogni parte indica:
 - Proporzione (es. "1/8 dell'altezza totale")
 - Forma geometrica (cubica/cilindrica/sferica/conica/irregolare)
 - Posizione spaziale (in alto, centro, laterale sinistro/destro, frontale...)
+
+═══ 4b. MATERIALI E TRAME PER PARTE ═══
+Per OGNI parte strutturale identificata sopra, indica obbligatoriamente:
+- MATERIALE: PIETRA_BLOCCHI | PIETRA_LISCIA | LEGNO | METALLO | CRISTALLO | CARNE | TESSUTO | ALTRO
+- TRAMA VISIBILE: descrivi brevemente (es. "blocchi rettangolari con giunture orizzontali e verticali visibili", "venature del legno", "superficie liscia uniforme", "piastre metalliche con rivetti", "traslucido con riflessi")
+- FLAG speciale: se la parte ha PIETRA_BLOCCHI con giunture visibili scrivi esplicitamente "FLAG: TEXTURE_PIETRA_BLOCCHI"
+
+Esempio per una colonna di pietra:
+  - fusto colonna: MATERIALE=PIETRA_BLOCCHI, TRAMA="blocchi rettangolari squadrati con giunture orizzontali e verticali ben visibili, colori lievemente alternati tra blocco e blocco", FLAG: TEXTURE_PIETRA_BLOCCHI
+  - base: MATERIALE=PIETRA_LISCIA, TRAMA="superficie liscia squadrata senza giunture visibili"
+  - capitello: MATERIALE=PIETRA_LISCIA, TRAMA="superficie levigata con modanature"
 
 ═══ 5. COLORI DOMINANTI PER PARTE ═══
 Per ogni parte identificata sopra, indica 1-2 colori dominanti in hex (es. "armatura: #5a4830, #3d2510").
@@ -277,7 +373,9 @@ OGGETTI/ARREDAMENTO:
   Barile piccolo     : cylinder r=0.25 h=0.55 | standard: r=0.32 h=0.85
   Cassa/baule        : corpo 0.8w×0.5d h=0.4, coperchio 0.82w×0.52d h=0.08
   Torcia da parete   : supporto r=0.04 h=0.20, coppa r=0.07 h=0.08, fiamma r=0.05 h=0.15
-  Colonna            : plinto 0.5×0.5 h=0.3, fusto r=0.18 h=2.8, capitello 0.5×0.5 h=0.25
+  Colonna tonda      : plinto 0.5×0.5 h=0.3, fusto cylinder r=0.18 h=2.8, capitello 0.5×0.5 h=0.25
+  Colonna quadrata   : plinto box 0.5×0.5 h=0.3, fusto box 0.36×0.36 h=2.8, capitello box 0.5×0.5 h=0.25
+  Colonna ovale      : fusto cylinder r=0.18 w=0.36 d=0.24 h=2.8 (usa w/d per sezione ellittica)
   Altare             : gradino 1.4×1.0 h=0.2, corpo 1.2×0.8 h=0.5, piano 1.3×0.9 h=0.08
   Porta/cancello     : stipiti 0.12×0.12 h=2.3, traversa 1.2 h=0.1, anta 0.55 h=2.2
   Trono              : seduta 0.6×0.55 h=0.06 a y=0.48, braccioli h=0.25, schienale h=0.90
@@ -377,6 +475,54 @@ ESEMPIO CREDENZA 3 ANTE + 3 CASSETTI (1.40w × 0.45d × 0.90h):
   p14-16 man. ante: sphere r=0.025 a y=0.28, z=0.27, x={-0.46,0,+0.46}, color="#2a2a28"
   Le cerniere sono visibili solo se grandi abbastanza (min 0.06×0.10×0.02): meglio ometterle se microscopiche.
 
+═══ SIMULAZIONE TRAME CON PRIMITIVE — REGOLA CRITICA ═══
+Le texture NON esistono nel motore — la trama si SIMULA OBBLIGATORIAMENTE con variazione colore e geometria segmentata.
+
+PIETRA A BLOCCHI — VIOLAZIONE GRAVE SE IGNORATA:
+  Se l'analisi visiva indica FLAG: TEXTURE_PIETRA_BLOCCHI su qualsiasi parte, oppure se la descrizione
+  menziona "pietra a blocchi", "blocchi squadrati", "giunture visibili", "mattoni di pietra":
+  → È VIETATO usare un singolo cylinder o box per quella parte.
+  → OBBLIGATORIAMENTE: scomponi il fusto/corpo in 4-6 SEGMENTI SOVRAPPOSTI con:
+      - Colori alternati scuro/chiaro tra un segmento e l'altro (differenza ~15% luminosità)
+        es. alternare #1e1a14 (scuro) e #2a2218 (chiaro), o i colori esatti dall'immagine
+      - "Giunture": cylinder piatto r=(r_fusto+0.01) h=0.02, color="#0f0c08" (scurissimo) tra ogni coppia di segmenti
+      - Le dimensioni dei segmenti variano leggermente (±10%) per blocchi naturali, non perfetti
+      - I segmenti possono essere box (per fusti squadrati) o cylinder (per fusti rotondi)
+  Esempio colonna h=2.8 con fusto squadrato:
+    → 5 segmenti box ~0.52h ciascuno + 4 giunture cylinder h=0.02 = 9 parti solo per il fusto
+  Esempio colonna h=2.8 con fusto tondo:
+    → 5 segmenti cylinder ~0.52h ciascuno + 4 giunture cylinder h=0.02 = 9 parti solo per il fusto
+
+LEGNO GREZZO/ASSI:
+  - Alterna 2-3 toni di marrone: #2a1a08 / #3d2510 / #1a0f05
+  - Per botti/barili: cylinder principale + 2-3 "cerchi" cylinder piatti r+0.02 h=0.03, colore metallico scuro
+
+METALLO CORROSO/PIASTRE:
+  - Pannelli box leggermente rientranti/sporgenti rispetto al piano principale (delta z = 0.01-0.02)
+  - Dettagli ruggine: piccoli box piatti color #552010 sparsi sulle superfici principali
+
+CRISTALLO/GEMME:
+  - Usa CONE + SPHERE: cono punta in alto, sphere alla base per la base arrotondata
+  - Opacity 0.5-0.7 per effetto vetro, colore saturo (#001e3d per blu, #1e0010 per rosso scuro)
+  - Aggiungi un secondo cristallo più piccolo ruotato 45° sopra/accanto per riflessi
+
+FORME ORGANICHE CURVE (schienali ricurvi, archi, alette):
+  - Schienale ricurvo di sedia/trono: NON un singolo box rettangolo piatto.
+    Usa 3-5 box o cylinder leggermente ruotati progressivamente (rz da -5° a +5°) per simulare la curva
+    Oppure 2-3 box sovrapposti con rotazioni alternate rx/rz per effetto curvatura
+  - Archi strutturali: catena di 3-5 box ruotati progressivamente (come i coni in catena)
+
+═══ TRASPARENZE ═══
+Alcune parti possono essere trasparenti/traslucide. Quando l'oggetto include cristalli, vetro, fuoco, fiamme, acqua, fumo:
+  - Aggiungi il campo "opacity" alla parte (float 0.0-1.0):
+    * Vetro chiaro:    opacity 0.25-0.35
+    * Cristallo scuro: opacity 0.45-0.60
+    * Fuoco/fiamma:    opacity 0.55-0.70
+    * Fumo leggero:    opacity 0.20-0.35
+    * Acqua:           opacity 0.40-0.55
+  - Per fiamme: colore #ff6600 o #ffaa00, opacity ~0.65, shape cone (punta in alto)
+  - Parti opache normali: NON aggiungere il campo opacity (default = 1.0 = completamente opaco)
+
 ═══ REGOLA DI VISIBILITÀ GENERALE ═══
 Ogni parte deve essere VISIBILE da almeno una direzione cardinale. Se una parte è interamente dentro il volume di un'altra con colore simile, rimuovila o spostala fuori. Minimo sporgenza utile: 0.01m (1cm).
 
@@ -456,9 +602,20 @@ const SYSTEM_JSON = `Sei un generatore JSON preciso per un motore 3D. Converti l
 SHAPES E DIMENSIONI:
 1. "shape" deve essere ESATTAMENTE una di: "box", "sphere", "cylinder", "cone"
 2. shape "box"      → usa w (larghezza), h (altezza), d (profondità). Imposta r=0
-3. shape "sphere"   → usa r (raggio). Imposta w=0, h=0, d=0
-4. shape "cylinder" → usa r (raggio) e h (altezza). Imposta w=0, d=0
-5. shape "cone"     → usa r (raggio base) e h (altezza). Imposta w=0, d=0
+3. shape "sphere"   → usa r (raggio base).
+     FORMA SFERICA UNIFORME: imposta w=0, h=0, d=0
+     ELLISSOIDE/DISCO APPIATTITO: usa w (diametro x), h (diametro y), d (diametro z) per deformare la sfera.
+       Esempio sfera appiattita (disco organico): r=0.3, w=0.6, h=0.15, d=0.6
+       Esempio sfera allungata verticalmente:     r=0.2, w=0.4, h=0.8, d=0.4
+       Se w/h/d valgono tutti esattamente 2*r (sfera uniforme) → usa 0 per semplicità.
+4. shape "cylinder" → usa r (raggio base) e h (altezza).
+     SEZIONE CIRCOLARE: imposta w=0, d=0
+     SEZIONE ELLITTICA (ovale): usa w (diametro x) e d (diametro z) diversi per base ovale.
+       Esempio colonna ovale: r=0.18, w=0.36, d=0.24, h=2.8
+       Esempio pilone piatto:  r=0.15, w=0.40, d=0.12, h=1.5
+5. shape "cone"     → usa r (raggio base) e h (altezza).
+     BASE CIRCOLARE: imposta w=0, d=0
+     BASE ELLITTICA: usa w (diametro x) e d (diametro z).
 6. Tutti i campi w, h, d, r DEVONO essere sempre presenti anche se valgono 0
 7. Tutti i valori numerici DEVONO essere numeri JSON puri (non stringhe: scrivi 0.5 non "0.5")
 
@@ -517,8 +674,139 @@ VISIBILITÀ DEGLI ELEMENTI DI SUPERFICIE (ANTE, CASSETTI, PANNELLI):
     Esempio credenza: cassa #3d2510, frontali #6b4a28, maniglie #2a2a28
 16. Ometti elementi troppo piccoli per essere visibili (cerniere < 0.06m, chiodini, decorazioni < 0.02m).
 
+TRASPARENZA:
+17. Le parti trasparenti/traslucide (cristallo, vetro, fuoco, fiamma, acqua, fumo) DEVONO avere il campo "opacity" (float 0.0-1.0).
+    Parti completamente opache: ometti il campo opacity (non scrivere opacity:1).
+    Esempi: vetro → opacity:0.30 | cristallo → opacity:0.55 | fiamma → opacity:0.65 | acqua → opacity:0.45
+
+TRAME PIETRA/LEGNO — REGOLA CRITICA:
+18. Se la scheda tecnica indica PIETRA A BLOCCHI, FLAG: TEXTURE_PIETRA_BLOCCHI, o "blocchi squadrati" per qualsiasi parte:
+    → È VIETATO rappresentare quel fusto/corpo con un singolo cylinder o box.
+    → OBBLIGATORIAMENTE genera 4-6 parti separate sovrapposte per il fusto:
+      a) Segmenti alternati colore scuro (#1e1a14) / chiaro (#2a2218) — O i colori esatti dell'immagine se presenti
+      b) Giunture tra i segmenti: cylinder r=(r_fusto+0.01) h=0.02 color="#0f0c08"
+      c) Variazione dimensioni ±10% tra segmenti per aspetto naturale
+    VIOLAZIONE DI QUESTA REGOLA = JSON inutilizzabile, non accettabile.
+
 OUTPUT:
-17. Restituisci SOLO il JSON valido — zero markdown (no \`\`\`), zero testo prima o dopo, zero commenti`
+19. Restituisci SOLO il JSON valido — zero markdown (no \`\`\`), zero testo prima o dopo, zero commenti`
+
+// ── Prompt: aggiornamento scheda tecnica per modifica (variante B step 1) ─────
+const SYSTEM_MODIFY_EXPAND = `Sei un art director 3D. Ricevi:
+1. La SCHEDA TECNICA 3D corrente di un oggetto (formato strutturato)
+2. Il JSON CORRENTE delle parti (stato reale — può differire dalla scheda per modifiche manuali successive)
+3. Una RICHIESTA DI MODIFICA dell'utente
+
+Il tuo compito: aggiornare la SCHEDA TECNICA incorporando SOLO la modifica richiesta.
+
+REGOLE FONDAMENTALI:
+- Mantieni INVARIATO tutto ciò che la modifica NON menziona esplicitamente
+- Il JSON corrente è la FONTE DI VERITÀ per dimensioni, posizioni e colori già definiti — non reinventarli
+- Per nuove parti: assegna ID progressivi dopo l'ultimo esistente (es. ultima p14 → nuove p15, p16, ...)
+- Per rimozione parti: eliminale dalla lista PARTI e aggiorna NOTE DI ASSEMBLAGGIO
+- Per modifiche dimensionali: ricalcola SEMPRE y_centro = y_base + h/2 per ogni parte modificata
+- Rispetta sistema di unità: 1 unità = 1 metro
+- Rispetta le regole di trama: PIETRA A BLOCCHI → segmenti sovrapposti (FLAG: TEXTURE_PIETRA_BLOCCHI)
+- Rispetta le regole di trasparenza: opacity solo per parti traslucide
+
+Restituisci la SCHEDA TECNICA COMPLETA aggiornata nello stesso formato strutturato dell'originale.
+NON restituire solo le parti modificate — restituisci SEMPRE la scheda completa.`
+
+// ── POST /api/ai/modify-supply ─────────────────────────────────────────────────
+router.post('/modify-supply', requireAuth, async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
+    return res.status(503).json({ error: 'GEMINI_API_KEY non configurata nel server' })
+  }
+
+  const { expanded, geometry, description, modifyPrompt, mode } = req.body
+  if (!modifyPrompt?.trim()) return res.status(400).json({ error: 'Prompt di modifica mancante' })
+  if (!geometry?.parts?.length) return res.status(400).json({ error: 'Geometria corrente mancante' })
+
+  try {
+    const chain        = []
+    const currentJson  = JSON.stringify(geometry.parts, null, 2)
+    let workingExpanded = expanded || null
+
+    // ── VARIANTE B Step 1: aggiorna scheda tecnica ────────────────────────────
+    if (mode === 'B') {
+      const userB1 = [
+        workingExpanded
+          ? `SCHEDA TECNICA CORRENTE:\n${workingExpanded}`
+          : `SCHEDA TECNICA: non disponibile${description ? ` (descrizione originale: "${description}")` : ''}`,
+        `JSON CORRENTE DELLE PARTI:\n${currentJson}`,
+        `RICHIESTA DI MODIFICA: "${modifyPrompt.trim()}"`,
+        'Aggiorna la scheda tecnica applicando la modifica. Restituisci la scheda completa aggiornata.',
+      ].join('\n\n')
+
+      console.log('\n[AI] ── MODIFY B1: AGGIORNA SCHEDA ─────────────────────────')
+      const rB1 = await callGemini(apiKey, SYSTEM_MODIFY_EXPAND, userB1, { maxOutputTokens: 16384 })
+      workingExpanded = rB1.text
+      console.log('[AI] ── MODIFY B1: RESPONSE ─────────────────────────────────')
+      console.log(workingExpanded)
+      chain.push({ step: 'B1', label: 'Aggiornamento scheda tecnica 3D', system: SYSTEM_MODIFY_EXPAND, user: userB1, response: workingExpanded })
+    }
+
+    // ── Generazione JSON (entrambe le varianti) ───────────────────────────────
+    let userJSON
+    if (mode === 'A') {
+      userJSON = [
+        workingExpanded ? `SCHEDA TECNICA DELL'OGGETTO:\n${workingExpanded}`
+          : description  ? `DESCRIZIONE ORIGINALE: "${description}"`
+          : null,
+        `JSON CORRENTE DELLE PARTI:\n${currentJson}`,
+        `RICHIESTA DI MODIFICA: "${modifyPrompt.trim()}"`,
+        'Applica SOLO la modifica richiesta. Parti NON interessate: mantieni identici id, label, shape, dimensioni, posizioni e colori. Restituisci il JSON completo aggiornato.',
+      ].filter(Boolean).join('\n\n')
+    } else {
+      userJSON = [
+        workingExpanded ? `SCHEDA TECNICA AGGIORNATA:\n${workingExpanded}` : null,
+        `JSON PRECEDENTE DELLE PARTI (mantieni posizioni e dimensioni invariate per le parti non modificate):\n${currentJson}`,
+        'Genera il JSON completo aggiornato. Per le parti non modificate: copia esattamente posizioni, dimensioni e colori dal JSON precedente.',
+      ].filter(Boolean).join('\n\n')
+    }
+
+    console.log('\n[AI] ── MODIFY JSON ─────────────────────────────────────────')
+    const rJSON = await callGemini(apiKey, SYSTEM_JSON, userJSON)
+    const rawJson = rJSON.text
+    console.log('[AI] ── MODIFY JSON: RESPONSE ───────────────────────────────')
+    console.log(rawJson)
+    chain.push({
+      step:   mode === 'A' ? 'A'  : 'B2',
+      label:  mode === 'A' ? 'Modifica diretta JSON' : 'Generazione JSON da scheda aggiornata',
+      system: SYSTEM_JSON, user: userJSON, response: rawJson,
+    })
+
+    // ── Parse + repair ────────────────────────────────────────────────────────
+    let parsed
+    const attempt = tryParseJson(rawJson)
+    if (!attempt.ok) {
+      console.warn('[AI] Parse fallito:', attempt.error)
+      const userRepair = `Il seguente testo doveva essere JSON valido ma contiene errori di sintassi: "${attempt.error}".\n\nTesto originale:\n${rawJson}\n\nRestituisci SOLO il JSON corretto, senza markdown, senza commenti, senza testo extra.`
+      try {
+        const rRepair = await callGemini(apiKey, SYSTEM_JSON, userRepair, { maxOutputTokens: 8192 })
+        chain.push({ step: 'repair', label: 'Riparazione JSON', system: SYSTEM_JSON, user: userRepair, response: rRepair.text })
+        const retry = tryParseJson(rRepair.text)
+        if (retry.ok) { parsed = retry.value }
+        else return res.status(422).json({ error: 'JSON non valido anche dopo retry: ' + retry.error, chain })
+      } catch { return res.status(422).json({ error: 'JSON non valido: ' + attempt.error, chain }) }
+    } else {
+      parsed = attempt.value
+      if (attempt.repaired) console.log('[AI] JSON riparato localmente')
+    }
+
+    res.json({
+      name:     parsed.name || null,
+      expanded: mode === 'B' ? workingExpanded : (expanded || null),
+      geometry: { v: 1, parts: normalizeParts(parsed) },
+      chain,
+    })
+
+  } catch (err) {
+    console.error('[ai] modify-supply error:', err.message)
+    res.status(500).json({ error: err.message })
+  }
+})
 
 // ── POST /api/ai/generate-supply ───────────────────────────────────────────────
 router.post('/generate-supply', requireAuth, async (req, res) => {
@@ -626,12 +914,36 @@ router.post('/generate-supply', requireAuth, async (req, res) => {
       }
     }
 
+    // ── Step 0.3: analisi strutturata del testo (solo se NON c'è immagine) ───────
+    let textAnalysis = null
+    if (!effectiveImageB64) {
+      const user03 = `Descrizione utente da strutturare: "${description.trim()}"\n\nAnalizza e struttura questa descrizione per la progettazione 3D seguendo esattamente il formato richiesto.`
+      console.log('\n[AI] ── STEP 0.3: ANALISI TESTO ────────────────────────────')
+      console.log(user03)
+      try {
+        const r03 = await callGemini(apiKey, SYSTEM_TEXT_ANALYSIS, user03, { maxOutputTokens: 4096 })
+        textAnalysis = r03.text
+        console.log('[AI] ── STEP 0.3: RESPONSE ──────────────────────────────────')
+        console.log(textAnalysis)
+        chain.push({
+          step: 0.3,
+          label: 'Analisi strutturata testo',
+          system: SYSTEM_TEXT_ANALYSIS,
+          user: user03,
+          response: textAnalysis,
+        })
+      } catch (taErr) {
+        console.warn('[AI] Analisi testo fallita, procedo senza:', taErr.message)
+      }
+    }
+
     // ── Step 1: espansione descrizione (con eventuale analisi + ricerca web) ──
     const user1Parts = [`Descrizione utente: "${description.trim()}"`]
     if (imageAnalysis) user1Parts.push(`ANALISI VISIVA STRUTTURATA dell'immagine di riferimento (usa questa come GUIDA STRUTTURALE PRIMARIA — silhouette, parti, proporzioni, colori):\n${imageAnalysis}`)
+    else if (textAnalysis) user1Parts.push(`ANALISI STRUTTURATA DELL'OGGETTO (usa questa come GUIDA STRUTTURALE PRIMARIA — componenti, proporzioni, materiali, colori, trasparenze):\n${textAnalysis}`)
     else if (imageSource === 'user') user1Parts.push(`È allegata un'immagine di riferimento caricata dall'utente: usala come GUIDA PRIMARIA per forma, proporzioni, colori dominanti e dettagli distintivi.`)
     else if (imageSource === 'auto') user1Parts.push(`È allegata un'immagine di riferimento scaricata automaticamente dal web (fonte: ${autoImage.url}): usala come guida visiva per forma, proporzioni, colori dominanti e dettagli distintivi.`)
-    if (webResearch)  user1Parts.push(`Sintesi di ricerca web:\n${webResearch.replace(/IMAGE_URLS?:.*$/is, '').trim()}`)
+    if (webResearch) user1Parts.push(`Sintesi di ricerca web:\n${webResearch.replace(/IMAGE_URLS?:.*$/is, '').trim()}`)
     user1Parts.push('Espandi in scheda tecnica 3D dettagliata. RISPETTA FEDELMENTE la struttura dall\'analisi visiva se presente — non trasformare il soggetto in un archetipo diverso. I COLORI dell\'immagine (se presente) hanno priorità assoluta: NON rimpiazzarli con toni infernali. Se il soggetto è verde, resta verde. Per forme CURVE/AFFUSOLATE (corna, zanne, archi, mezzelune, lame, code) scomponi in CATENE DI 3-5 CONI con rotazioni progressive. Per forme TONDEGGIANTI/PANCIUTE (vasi, urne, brocche, sacchi, cupole) usa PILE DI SFERE a r variabile sovrapposte — mai un box o cylinder singolo per queste forme.')
     const user1 = user1Parts.join('\n\n')
 
@@ -649,6 +961,7 @@ router.post('/generate-supply', requireAuth, async (req, res) => {
     console.log(expanded)
     const s1Label = imageSource === 'user' ? 'Espansione descrizione (+ immagine utente)'
                   : imageSource === 'auto' ? 'Espansione descrizione (+ immagine auto dal web)'
+                  : textAnalysis             ? 'Espansione descrizione (+ analisi testo)'
                   : 'Espansione descrizione'
     const s1UserLog = effectiveImageB64
       ? user1 + `\n\n[+ immagine di riferimento allegata: ${imageSource === 'auto' ? autoImage.url : 'uploadata dall\'utente'}]`
@@ -712,23 +1025,7 @@ router.post('/generate-supply', requireAuth, async (req, res) => {
     }
 
     // Normalizzazione parti
-    const VALID_SHAPES = new Set(['box', 'sphere', 'cylinder', 'cone'])
-    const parts = (parsed.parts || parsed).map((p, i) => ({
-      id:    p.id    || `p${String(i + 1).padStart(2, '0')}`,
-      label: p.label || `Parte ${i + 1}`,
-      shape: VALID_SHAPES.has(p.shape) ? p.shape : 'box',
-      w:     Number(p.w  ?? 0),
-      h:     Number(p.h  ?? 0),
-      d:     Number(p.d  ?? 0),
-      r:     Number(p.r  ?? 0),
-      x:     Number(p.x  ?? 0),
-      y:     Number(p.y  ?? 0),
-      z:     Number(p.z  ?? 0),
-      rx:    Number(p.rx ?? 0),
-      ry:    Number(p.ry ?? 0),
-      rz:    Number(p.rz ?? 0),
-      color: typeof p.color === 'string' && p.color.startsWith('#') ? p.color : '#6b4a28',
-    }))
+    const parts = normalizeParts(parsed)
 
     res.json({
       name:     parsed.name || description.trim(),

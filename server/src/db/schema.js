@@ -92,7 +92,9 @@ export async function initDB() {
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS sight_range  INT          DEFAULT 10`)
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS attack_range INT          DEFAULT 2`)
     // Supplies columns
-    await conn.query(`ALTER TABLE supplies ADD COLUMN IF NOT EXISTS scale FLOAT NOT NULL DEFAULT 1.0`)
+    await conn.query(`ALTER TABLE supplies ADD COLUMN IF NOT EXISTS scale       FLOAT    NOT NULL DEFAULT 1.0`)
+    await conn.query(`ALTER TABLE supplies ADD COLUMN IF NOT EXISTS description TEXT     DEFAULT NULL`)
+    await conn.query(`ALTER TABLE supplies ADD COLUMN IF NOT EXISTS expanded    LONGTEXT DEFAULT NULL`)
     // Soft-delete: active flag on all content tables
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS sounds JSON DEFAULT NULL`)
     await conn.query(`ALTER TABLE monsters ADD COLUMN IF NOT EXISTS move_type VARCHAR(10) NOT NULL DEFAULT 'walk'`)

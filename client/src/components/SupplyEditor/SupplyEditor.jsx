@@ -146,6 +146,7 @@ export default function SupplyEditor() {
   const [studioMode, setStudioMode]   = useState(false)
   const [showTemplatePicker, setShowTemplatePicker] = useState(false)
   const [showAIPicker, setShowAIPicker] = useState(false)
+  const [showAIModify, setShowAIModify] = useState(false)
 
   // Undo / Redo
   const undoStack = useRef([])
@@ -239,14 +240,28 @@ export default function SupplyEditor() {
     undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
     const s = {
       id: m.id, name: m.name,
-      geometry: m.geometry || { v:1, parts:[] },
-      lore: m.lore || '',
-      sounds: m.sounds || { proximity: defaultProximity() },
-      scale: m.scale ?? 1.0,
+      geometry:    m.geometry    || { v:1, parts:[] },
+      lore:        m.lore        || '',
+      sounds:      m.sounds      || { proximity: defaultProximity() },
+      scale:       m.scale       ?? 1.0,
+      description: m.description || null,
+      expanded:    null,   // caricato in background sotto
     }
     curRef.current = s; savedRef.current = s; setEditing(s)
     _initSym(s.geometry?.parts || [])
     setThumbnail(m.thumbnail||null); setTab('geometry'); setExpandedPart(null); setSelectedPart(null)
+
+    // Fetch completo per recuperare expanded (non incluso nella lista per performance)
+    fetch(`/api/supplies/${m.id}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(full => {
+        if (!full?.expanded) return
+        // Aggiorna solo se la selezione non è cambiata nel frattempo
+        if (curRef.current?.id !== m.id) return
+        const updated = { ...curRef.current, expanded: full.expanded, description: full.description || curRef.current.description }
+        curRef.current = updated; savedRef.current = updated; setEditing(updated)
+      })
+      .catch(() => {})
   }
 
   const newSupply = () => setShowTemplatePicker(true)
@@ -271,31 +286,48 @@ export default function SupplyEditor() {
   const handlePartSelect    = useCallback((partId)          => { setSelectedPart(partId); setExpandedPart(partId) }, [])
   const handlePartTransform = useCallback((partId, updates) => { setPart(partId, updates) }, [])
 
+  const applyAIModify = useCallback((newGeometry, newExpanded) => {
+    _pushUndo()
+    _commit({
+      ...curRef.current,
+      geometry: newGeometry,
+      ...(newExpanded != null ? { expanded: newExpanded } : {}),
+    })
+    setShowAIModify(false)
+  }, [])
+
   const saveSupply = async () => {
-    if (!editing || saving) return
+    if (!curRef.current || saving) return
     setSaving(true)
-    const snapEditing = curRef.current
-    const snapThumb   = thumbnail
+    // Usa sempre curRef.current — è la fonte di verità aggiornata,
+    // evita dipendenze dallo stato React che potrebbe non essere ancora sincronizzato
+    const snap = curRef.current
+    const snapThumb = thumbnail
     try {
-      const url = editing.id ? `/api/supplies/${editing.id}` : '/api/supplies'
+      const url = snap.id ? `/api/supplies/${snap.id}` : '/api/supplies'
       const r = await fetch(url, {
-        method: editing.id ? 'PUT' : 'POST',
+        method: snap.id ? 'PUT' : 'POST',
         headers: { Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
         body: JSON.stringify({
-          name: editing.name, geometry: editing.geometry,
-          thumbnail, lore: editing.lore, sounds: editing.sounds,
-          scale: editing.scale ?? 1.0,
+          name:        snap.name,
+          geometry:    snap.geometry,
+          thumbnail:   snapThumb,
+          lore:        snap.lore,
+          sounds:      snap.sounds,
+          scale:       snap.scale       ?? 1.0,
+          description: snap.description || null,
+          expanded:    snap.expanded    || null,
         }),
       })
       if (r.ok) {
         const data = await r.json()
-        if (!editing.id && data.id) {
-          const updated = { ...snapEditing, id: data.id }
+        if (!snap.id && data.id) {
+          const updated = { ...snap, id: data.id }
           savedRef.current = updated; curRef.current = updated; setEditing(updated)
         } else {
-          savedRef.current = snapEditing
+          savedRef.current = snap
         }
-        _initSym(snapEditing.geometry?.parts || [])
+        _initSym(snap.geometry?.parts || [])
         await loadSupplies()
       }
     } finally { setSaving(false) }
@@ -312,6 +344,8 @@ export default function SupplyEditor() {
       lore: m.lore || '',
       sounds: m.sounds ? JSON.parse(JSON.stringify(m.sounds)) : { proximity: defaultProximity() },
       scale: m.scale ?? 1.0,
+      description: m.description || null,
+      expanded: m.expanded || null,
     }
     curRef.current = s; savedRef.current = null; setEditing(s)
     _initSym(s.geometry?.parts || [])
@@ -555,6 +589,10 @@ export default function SupplyEditor() {
                       {saving ? '...' : (editing.id ? '↑ AGGIORNA' : '✓ SALVA')}
                     </button>
                   )}
+                  <IconBtn onClick={() => setShowAIModify(true)} title="Modifica con AI"
+                    icon="⚙" label="AI MOD"
+                    base={{ bg:C.redGhost, border:C.redDim, color:C.txtDim }}
+                    hover={{ bg:'#1a0500', border:C.red, color:C.txtAccent }} />
                   <IconBtn onClick={duplicateSupply} title="Duplica fornitura"
                     icon="⧉" label="COPIA"
                     base={{ bg:'transparent', border:C.borderMed, color:C.txtSub }}
@@ -678,11 +716,11 @@ export default function SupplyEditor() {
         }}>
           <AIGeneratorModal
             token={token}
-            onApply={(name, geometry) => {
+            onApply={(name, geometry, expanded, description) => {
               setShowTemplatePicker(false); setShowAIPicker(false)
               undoStack.current = []; redoStack.current = []; setHistLen({ u:0, r:0 })
               const s = {
-                id: null, name,
+                id: null, name, expanded: expanded||null, description: description||null,
                 geometry,
                 lore: '',
                 sounds: { proximity: defaultProximity() },
@@ -694,6 +732,24 @@ export default function SupplyEditor() {
             onBack={() => setShowAIPicker(false)}
             onCancel={() => { setShowTemplatePicker(false); setShowAIPicker(false) }}
           />
+        </div>
+      )}
+
+      {/* ── AI Modify Modal ── */}
+      {showAIModify && editing && (
+        <div style={{
+          position:'absolute', inset:0, background:'rgba(2,1,0,0.96)',
+          display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+          zIndex:100, padding:'32px', overflowY:'auto',
+        }}>
+          <div className="se-scroll" style={{ width:'100%', maxWidth:680, maxHeight:'100%', overflowY:'auto' }}>
+            <AIModifyModal
+              token={token}
+              supply={curRef.current}
+              onApply={applyAIModify}
+              onClose={() => setShowAIModify(false)}
+            />
+          </div>
         </div>
       )}
     </div>
@@ -926,6 +982,26 @@ function PartEditor({ part, onChange, onLive, allColors = [] }) {
                 onMouseLeave={e=>{ e.currentTarget.style.transform='scale(1)' }} />
             ))}
           </div>
+        </div>
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+        <span style={{ color:C.txtSub, fontSize:10, letterSpacing:1 }}>OPACITA'</span>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <input type="range" min={0.05} max={1} step={0.05}
+            value={part.opacity ?? 1}
+            onChange={e => onChange({ opacity: parseFloat(e.target.value) === 1 ? undefined : parseFloat(e.target.value) })}
+            style={{ flex:1, accentColor: C.red, cursor:'pointer' }} />
+          <span style={{ color: C.txtBright, fontSize:11, fontFamily:'monospace', width:34, textAlign:'right' }}>
+            {((part.opacity ?? 1) * 100).toFixed(0)}%
+          </span>
+          {(part.opacity !== undefined && part.opacity < 1) && (
+            <button onClick={() => onChange({ opacity: undefined })}
+              title="Ripristina opaco"
+              style={{ background:'none', border:`1px solid ${C.borderMed}`, color:C.txtDim,
+                fontSize:10, cursor:'pointer', padding:'1px 5px', fontFamily:'monospace' }}>
+              ×
+            </button>
+          )}
         </div>
       </div>
       <div>
@@ -1356,7 +1432,7 @@ function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
       const data = await res.json()
       if (data.chain) setChain(data.chain)
       if (!res.ok) { setPhase('error'); setErrMsg(data.error || 'Errore sconosciuto'); return }
-      setResult({ name: data.name, geometry: data.geometry, autoImage: data.autoImage })
+      setResult({ name: data.name, geometry: data.geometry, autoImage: data.autoImage, expanded: data.expanded, description: desc.trim() })
       setPhase('done')
     } catch (err) {
       phaseTimers.forEach(clearTimeout)
@@ -1577,7 +1653,7 @@ function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
               {result.geometry?.parts?.length ?? 0} PARTI GENERATE
             </div>
           </div>
-          <button onClick={() => onApply(result.name, result.geometry)}
+          <button onClick={() => onApply(result.name, result.geometry, result.expanded, result.description)}
             style={{ background:'#002244', border:`1px solid #2266aa`,
               color:'#66aaff', fontFamily:'monospace', fontSize:11,
               letterSpacing:3, padding:'10px 22px', cursor:'pointer', transition:'all 0.15s' }}
@@ -1612,4 +1688,247 @@ function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
 function SectionLabel({ children }) {
   return <div style={{ color:C.txtDim, fontSize:10, letterSpacing:2, marginBottom:7,
     borderBottom:`1px solid ${C.border}`, paddingBottom:4 }}>{children}</div>
+}
+
+// ── AI Modify Modal ───────────────────────────────────────────────────────────
+function AIModifyModal({ token, supply, onApply, onClose }) {
+  const [modifyPrompt, setModifyPrompt] = useState('')
+  const [mode,  setMode]  = useState('A')
+  const [phase, setPhase] = useState('idle')
+  const [chain, setChain] = useState([])
+  const [result, setResult] = useState(null)
+  const [errMsg, setErrMsg] = useState('')
+
+  const loading = phase === 'step_a' || phase === 'step_b1' || phase === 'step_b2'
+  const oldCount = supply.geometry?.parts?.length ?? 0
+
+  const generate = async () => {
+    if (!modifyPrompt.trim() || loading) return
+    setPhase(mode === 'A' ? 'step_a' : 'step_b1')
+    setChain([]); setResult(null); setErrMsg('')
+
+    const phaseTimers = []
+    if (mode === 'B') {
+      phaseTimers.push(setTimeout(() => setPhase(p => p === 'step_b1' ? 'step_b2' : p), 9000))
+    }
+
+    try {
+      const res = await fetch('/api/ai/modify-supply', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expanded:     supply.expanded     || null,
+          geometry:     supply.geometry,
+          description:  supply.description  || null,
+          modifyPrompt: modifyPrompt.trim(),
+          mode,
+        }),
+      })
+      phaseTimers.forEach(clearTimeout)
+      const data = await res.json()
+      if (data.chain) setChain(data.chain)
+      if (!res.ok) { setPhase('error'); setErrMsg(data.error || 'Errore sconosciuto'); return }
+      setResult({ geometry: data.geometry, expanded: data.expanded, name: data.name })
+      setPhase('done')
+    } catch (err) {
+      phaseTimers.forEach(clearTimeout)
+      setPhase('error'); setErrMsg(err.message)
+    }
+  }
+
+  const phases = mode === 'A'
+    ? [['step_a',  'MODIFICA JSON — Gemini applica la modifica direttamente alla geometria']]
+    : [['step_b1', 'RISCRITTURA SCHEDA — Gemini aggiorna la scheda tecnica 3D'],
+       ['step_b2', 'GENERAZIONE JSON — Gemini ricostruisce la geometria dalla scheda aggiornata']]
+
+  const newCount = result?.geometry?.parts?.length ?? 0
+  const delta    = newCount - oldCount
+
+  return (
+    <div style={{ width:'100%', display:'flex', flexDirection:'column', gap:0, paddingBottom:24 }}>
+
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:22 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+          <span style={{ color:C.txtAccent, fontSize:22 }}>⚙</span>
+          <div>
+            <div style={{ color:C.txtAccent, fontSize:13, letterSpacing:4, fontFamily:'monospace' }}>
+              MODIFICA CON AI
+            </div>
+            <div style={{ color:C.txtDim, fontSize:9, letterSpacing:2, fontFamily:'monospace', marginTop:2 }}>
+              {supply.name} &nbsp;·&nbsp; {oldCount} parti correnti
+            </div>
+          </div>
+        </div>
+        <button onClick={onClose}
+          style={{ background:'transparent', border:`1px solid ${C.border}`, color:'#444',
+            fontFamily:'monospace', fontSize:10, letterSpacing:2, padding:'5px 12px', cursor:'pointer' }}
+          onMouseEnter={e=>Object.assign(e.currentTarget.style,{borderColor:C.red,color:C.txtAccent})}
+          onMouseLeave={e=>Object.assign(e.currentTarget.style,{borderColor:C.border,color:'#444'})}>
+          ✕ CHIUDI
+        </button>
+      </div>
+
+      {/* Warning se non ha scheda */}
+      {!supply.expanded && (
+        <div style={{ background:'#120800', border:`1px solid ${C.borderMed}`,
+          padding:'8px 12px', color:C.txtSub, fontSize:9, letterSpacing:1,
+          fontFamily:'monospace', marginBottom:14, lineHeight:1.7 }}>
+          Scheda tecnica non disponibile{supply.description ? ' (scheda non salvata con questa versione)' : ' — fornitura non generata con AI'}.
+          La variante A modificherà direttamente il JSON corrente ({oldCount} parti).
+          {supply.description && ` Descrizione originale: "${supply.description}"`}
+        </div>
+      )}
+
+      {/* Mode selector */}
+      <div style={{ marginBottom:16 }}>
+        <div style={{ color:C.txtSub, fontSize:10, letterSpacing:2, fontFamily:'monospace', marginBottom:8 }}>
+          MODALITA' DI MODIFICA
+        </div>
+        <div style={{ display:'flex' }}>
+          {[
+            ['A', 'A — DIRETTA',   '1 passaggio. Modifica il JSON direttamente. Veloce, ideale per modifiche semplici: colori, dimensioni, aggiunta/rimozione parti.'],
+            ['B', 'B — COMPLETA',  '2 passaggi. Aggiorna prima la scheda tecnica, poi rigenera il JSON. Risultati migliori per ristrutturazioni o cambio stile complessivo.'],
+          ].map(([m, label, desc]) => (
+            <div key={m} onClick={() => !loading && setMode(m)}
+              style={{ flex:1, padding:'12px', cursor: loading ? 'default' : 'pointer', transition:'all 0.15s',
+                background: mode === m ? '#180500' : C.bgCard,
+                border:`1px solid ${mode === m ? C.red : C.border}`,
+                borderRight: m === 'A' ? 'none' : undefined }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                <div style={{ width:11, height:11, borderRadius:'50%', flexShrink:0,
+                  background: mode === m ? C.red : C.borderMed,
+                  border:`2px solid ${mode === m ? '#ff5533' : '#333'}` }} />
+                <span style={{ color: mode === m ? C.txtAccent : C.txtDim,
+                  fontSize:10, letterSpacing:2, fontFamily:'monospace', fontWeight:'bold' }}>
+                  {label}
+                </span>
+              </div>
+              <div style={{ color: mode === m ? C.txtSub : C.txtGhost,
+                fontSize:9, lineHeight:1.6, fontFamily:'monospace' }}>
+                {desc}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Prompt */}
+      <div style={{ display:'flex', flexDirection:'column', gap:7, marginBottom:16 }}>
+        <span style={{ color:C.txtSub, fontSize:10, letterSpacing:2, fontFamily:'monospace' }}>
+          DESCRIVI LA MODIFICA
+        </span>
+        <textarea
+          value={modifyPrompt}
+          onChange={e => setModifyPrompt(e.target.value)}
+          autoFocus
+          placeholder="es. aggiungi 4 gambe cilindriche nere sotto la base, cambia il colore del fusto in rosso sangue, rimuovi le giunture tra i blocchi di pietra, aggiungi un cristallo trasparente in cima..."
+          rows={4}
+          style={{ background:C.bgInput, border:`1px solid ${C.borderMed}`,
+            color:C.txtBright, fontFamily:'monospace', fontSize:12,
+            padding:'12px 14px', outline:'none', resize:'vertical',
+            width:'100%', boxSizing:'border-box', lineHeight:1.7 }}
+          onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) generate() }}
+        />
+        <span style={{ color:C.txtGhost, fontSize:9, letterSpacing:1, fontFamily:'monospace' }}>
+          Ctrl+Invio per generare
+        </span>
+      </div>
+
+      {/* Generate button */}
+      <button onClick={generate} disabled={!modifyPrompt.trim() || loading}
+        style={{ background: loading ? '#1a0800' : '#3a0800',
+          border:`1px solid ${loading ? C.borderMed : C.red}`,
+          color: loading ? C.txtDim : C.txtAccent,
+          fontFamily:'monospace', fontSize:12, letterSpacing:4,
+          padding:'13px 0', cursor: loading ? 'default' : 'pointer',
+          transition:'all 0.15s', opacity: !modifyPrompt.trim() ? 0.35 : 1,
+          marginBottom:20 }}
+        onMouseEnter={e=>{ if(!loading&&modifyPrompt.trim()) Object.assign(e.currentTarget.style,{background:'#550800',borderColor:'#ff3300',color:'#ff8855'}) }}
+        onMouseLeave={e=>{ if(!loading&&modifyPrompt.trim()) Object.assign(e.currentTarget.style,{background:'#3a0800',borderColor:C.red,color:C.txtAccent}) }}>
+        {loading ? '...' : '⚙ APPLICA MODIFICA AI'}
+      </button>
+
+      {/* Progress */}
+      {loading && (
+        <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:16 }}>
+          {phases.map(([s, label], i) => {
+            const idxCurrent = phases.findIndex(([k]) => k === phase)
+            const active = phase === s
+            const done   = idxCurrent > i
+            return (
+              <div key={s} style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <div style={{ width:10, height:10, borderRadius:'50%', flexShrink:0, transition:'all 0.3s',
+                  background: active ? C.txtAccent : done ? C.redDim : '#1a1a1a',
+                  boxShadow: active ? `0 0 10px ${C.txtAccent}` : 'none' }} />
+                <span style={{ fontSize:10, letterSpacing:2, fontFamily:'monospace',
+                  color: active ? C.txtAccent : done ? C.red : '#333' }}>
+                  {label}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Chain verbosa */}
+      {chain.length > 0 && (
+        <div style={{ marginBottom:16 }}>
+          <div style={{ color:C.txtDim, fontSize:9, letterSpacing:3, fontFamily:'monospace',
+            borderBottom:`1px solid ${C.border}`, paddingBottom:6, marginBottom:10 }}>
+            CHAIN DI MODIFICA — {chain.length} {chain.length === 1 ? 'STEP' : 'STEP'}
+          </div>
+          {chain.map((step, i) => <ChainStep key={i} step={step} />)}
+        </div>
+      )}
+
+      {/* Error */}
+      {phase === 'error' && (
+        <div style={{ background:'#1a0000', border:`1px solid ${C.redDim}`,
+          padding:'12px 14px', color:'#ff5533', fontSize:10,
+          fontFamily:'monospace', lineHeight:1.6, marginBottom:16 }}>
+          ERRORE: {errMsg}
+        </div>
+      )}
+
+      {/* Result */}
+      {phase === 'done' && result && (
+        <div style={{ background:'#100400', border:`1px solid ${C.borderMed}`,
+          padding:'14px 16px', marginBottom:4,
+          display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 }}>
+          <div>
+            <div style={{ color:C.txtAccent, fontSize:11, letterSpacing:2,
+              fontFamily:'monospace', marginBottom:6 }}>
+              MODIFICA PRONTA
+            </div>
+            <div style={{ display:'flex', gap:12, alignItems:'center' }}>
+              <span style={{ color:C.txtDim, fontSize:9, fontFamily:'monospace' }}>
+                {oldCount} parti
+              </span>
+              <span style={{ color:C.txtGhost, fontSize:9 }}>→</span>
+              <span style={{ fontFamily:'monospace', fontSize:9,
+                color: delta !== 0 ? '#ffcc44' : '#88cc66' }}>
+                {newCount} parti{delta !== 0 ? ` (${delta > 0 ? '+' : ''}${delta})` : ''}
+              </span>
+            </div>
+            {mode === 'B' && result.expanded && (
+              <div style={{ color:'#446644', fontSize:9, letterSpacing:1,
+                fontFamily:'monospace', marginTop:4 }}>
+                Scheda tecnica aggiornata
+              </div>
+            )}
+          </div>
+          <button onClick={() => onApply(result.geometry, result.expanded)}
+            style={{ background:C.redGhost, border:`1px solid ${C.red}`,
+              color:C.txtAccent, fontFamily:'monospace', fontSize:11,
+              letterSpacing:3, padding:'11px 22px', cursor:'pointer',
+              transition:'all 0.15s', flexShrink:0 }}
+            onMouseEnter={e=>Object.assign(e.currentTarget.style,{background:'#3a0500',borderColor:'#ff3300',color:'#ff9966'})}
+            onMouseLeave={e=>Object.assign(e.currentTarget.style,{background:C.redGhost,borderColor:C.red,color:C.txtAccent})}>
+            ⚙ APPLICA
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
