@@ -1354,11 +1354,12 @@ function ChainStep({ step }) {
 }
 
 function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
-  const [desc,   setDesc]   = useState('')
-  const [phase,  setPhase]  = useState('idle')
-  const [chain,  setChain]  = useState([])
-  const [result, setResult] = useState(null)
-  const [errMsg, setErrMsg] = useState('')
+  const [desc,     setDesc]     = useState('')
+  const [phase,    setPhase]    = useState('idle')
+  const [chain,    setChain]    = useState([])
+  const [result,   setResult]   = useState(null)
+  const [errMsg,   setErrMsg]   = useState('')
+  const [provider, setProvider] = useState('gemini')   // 'gemini' | 'local'
 
   // Nuovi input
   const [imageFile,    setImageFile]    = useState(null)  // File object
@@ -1400,13 +1401,15 @@ function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
   const generate = async () => {
     if (!desc.trim() || phase === 'step0' || phase === 'step1' || phase === 'step2') return
     const hasImage = !!imageBase64
-    const firstPhase = useWebSearch ? 'step0' : (hasImage ? 'step05' : 'step1')
+    // Web search solo con Gemini
+    const effectiveWebSearch = useWebSearch && provider === 'gemini'
+    const firstPhase = effectiveWebSearch ? 'step0' : (hasImage ? 'step05' : 'step1')
     setPhase(firstPhase); setChain([]); setResult(null); setErrMsg('')
 
     // avanza le fasi client-side in base al tempo (indicativo)
     const phaseTimers = []
     let t = 0
-    if (useWebSearch) {
+    if (effectiveWebSearch) {
       t += 6000
       phaseTimers.push(setTimeout(() => setPhase(p => p === 'step0' ? (hasImage ? 'step05' : 'step1') : p), t))
     }
@@ -1425,7 +1428,8 @@ function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
           description: desc,
           imageBase64: imageBase64 || undefined,
           imageMime:   imageMime   || undefined,
-          useWebSearch,
+          useWebSearch: effectiveWebSearch,
+          provider,
         }),
       })
       phaseTimers.forEach(clearTimeout)
@@ -1446,11 +1450,35 @@ function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
     <div style={{ width:'100%', maxWidth:680, display:'flex', flexDirection:'column', gap:0 }}>
 
       {/* Header */}
-      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:24 }}>
-        <span style={{ color:'#66aaff', fontSize:22 }}>✦</span>
-        <span style={{ color:'#88ccff', fontSize:13, letterSpacing:4, fontFamily:'monospace' }}>
-          GENERA CON GEMINI AI
+      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:16 }}>
+        <span style={{ color: provider === 'local' ? '#ffaa44' : '#66aaff', fontSize:22 }}>✦</span>
+        <span style={{ color: provider === 'local' ? '#ffcc88' : '#88ccff',
+          fontSize:13, letterSpacing:4, fontFamily:'monospace' }}>
+          {provider === 'local' ? 'GENERA CON QWEN (LOCALE)' : 'GENERA CON GEMINI AI'}
         </span>
+      </div>
+
+      {/* Provider selector */}
+      <div style={{ display:'flex', marginBottom:18 }}>
+        {[
+          ['gemini', 'GEMINI',       '#1a3a5a', '#4488cc', '#88ccff'],
+          ['local',  'QWEN (locale)','#2a1800', '#cc8833', '#ffaa44'],
+        ].map(([p, label, bg, border, col]) => (
+          <div key={p} onClick={() => setProvider(p)}
+            style={{ flex:1, padding:'9px 12px', cursor:'pointer', transition:'all 0.15s',
+              background: provider === p ? bg : C.bgCard,
+              border: `1px solid ${provider === p ? border : C.border}`,
+              borderRight: p === 'gemini' ? 'none' : undefined,
+              display:'flex', alignItems:'center', gap:8 }}>
+            <div style={{ width:9, height:9, borderRadius:'50%', flexShrink:0,
+              background: provider === p ? border : C.borderMed,
+              boxShadow: provider === p ? `0 0 6px ${border}` : 'none' }} />
+            <span style={{ color: provider === p ? col : C.txtDim,
+              fontSize:10, letterSpacing:2, fontFamily:'monospace' }}>
+              {label}
+            </span>
+          </div>
+        ))}
       </div>
 
       {/* Description input */}
@@ -1532,25 +1560,31 @@ function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
         />
       </div>
 
-      {/* Web search toggle */}
-      <label style={{ display:'flex', alignItems:'center', gap:10, marginBottom:18, cursor:'pointer',
-        background: useWebSearch ? '#001a2a' : 'transparent',
-        border:`1px solid ${useWebSearch ? '#2266aa' : '#223344'}`,
+      {/* Web search toggle — solo Gemini */}
+      <label style={{ display:'flex', alignItems:'center', gap:10, marginBottom:18,
+        cursor: provider === 'local' ? 'default' : 'pointer',
+        opacity: provider === 'local' ? 0.35 : 1,
+        background: useWebSearch && provider === 'gemini' ? '#001a2a' : 'transparent',
+        border:`1px solid ${useWebSearch && provider === 'gemini' ? '#2266aa' : '#223344'}`,
         padding:'10px 14px', transition:'all 0.15s' }}>
         <input
           type="checkbox"
-          checked={useWebSearch}
+          checked={useWebSearch && provider === 'gemini'}
+          disabled={provider === 'local'}
           onChange={e => setUseWebSearch(e.target.checked)}
-          style={{ width:14, height:14, accentColor:'#4488cc', cursor:'pointer' }}
+          style={{ width:14, height:14, accentColor:'#4488cc',
+            cursor: provider === 'local' ? 'default' : 'pointer' }}
         />
         <div style={{ flex:1 }}>
-          <div style={{ color: useWebSearch ? '#88ccff' : '#557788',
+          <div style={{ color: useWebSearch && provider === 'gemini' ? '#88ccff' : '#557788',
             fontSize:11, letterSpacing:2, fontFamily:'monospace' }}>
-            🔍 RICERCA RIFERIMENTI NEL WEB
+            RICERCA RIFERIMENTI NEL WEB
           </div>
-          <div style={{ color: useWebSearch ? '#446688' : '#334455',
+          <div style={{ color: useWebSearch && provider === 'gemini' ? '#446688' : '#334455',
             fontSize:9, letterSpacing:1, fontFamily:'monospace', marginTop:2 }}>
-            Gemini cerca immagini/descrizioni con grounding prima di generare
+            {provider === 'local'
+              ? 'Non disponibile con modello locale (richiede Gemini)'
+              : 'Gemini cerca immagini/descrizioni con grounding prima di generare'}
           </div>
         </div>
       </label>
@@ -1572,12 +1606,16 @@ function AIGeneratorModal({ token, onApply, onBack, onCancel }) {
       {/* Progress */}
       {loading && (
         <div style={{ display:'flex', flexDirection:'column', gap:10, marginBottom:16 }}>
-          {[
-            ...(useWebSearch ? [['step0','RICERCA WEB — Gemini cerca riferimenti con grounding']] : []),
-            ...(imageBase64 ? [['step05','ANALISI IMMAGINE — Gemini descrive soggetto, parti, proporzioni']] : []),
-            ['step1', (imageBase64 || useWebSearch) ? 'ESPANSIONE — Gemini progetta scheda tecnica 3D' : 'ESPANSIONE DESCRIZIONE — Gemini elabora il concept 3D'],
-            ['step2','GENERAZIONE JSON — Gemini costruisce la geometria']
-          ].map(([s, label], i, arr) => {
+          {(() => {
+            const M = provider === 'local' ? 'QWEN' : 'GEMINI'
+            const effectiveWS = useWebSearch && provider === 'gemini'
+            return [
+              ...(effectiveWS ? [['step0',`RICERCA WEB — ${M} cerca riferimenti con grounding`]] : []),
+              ...(imageBase64 ? [['step05',`ANALISI IMMAGINE — ${M} descrive soggetto, parti, proporzioni`]] : []),
+              ['step1', (imageBase64 || effectiveWS) ? `ESPANSIONE — ${M} progetta scheda tecnica 3D` : `ESPANSIONE DESCRIZIONE — ${M} elabora il concept 3D`],
+              ['step2', `GENERAZIONE JSON — ${M} costruisce la geometria`],
+            ]
+          })().map(([s, label], i, arr) => {
             const idxCurrent = arr.findIndex(([k]) => k === phase)
             const idxSelf    = i
             const active = phase === s
@@ -1693,11 +1731,12 @@ function SectionLabel({ children }) {
 // ── AI Modify Modal ───────────────────────────────────────────────────────────
 function AIModifyModal({ token, supply, onApply, onClose }) {
   const [modifyPrompt, setModifyPrompt] = useState('')
-  const [mode,  setMode]  = useState('A')
-  const [phase, setPhase] = useState('idle')
-  const [chain, setChain] = useState([])
-  const [result, setResult] = useState(null)
-  const [errMsg, setErrMsg] = useState('')
+  const [mode,     setMode]     = useState('A')
+  const [phase,    setPhase]    = useState('idle')
+  const [chain,    setChain]    = useState([])
+  const [result,   setResult]   = useState(null)
+  const [errMsg,   setErrMsg]   = useState('')
+  const [provider, setProvider] = useState('gemini')   // 'gemini' | 'local'
 
   const loading = phase === 'step_a' || phase === 'step_b1' || phase === 'step_b2'
   const oldCount = supply.geometry?.parts?.length ?? 0
@@ -1722,6 +1761,7 @@ function AIModifyModal({ token, supply, onApply, onClose }) {
           description:  supply.description  || null,
           modifyPrompt: modifyPrompt.trim(),
           mode,
+          provider,
         }),
       })
       phaseTimers.forEach(clearTimeout)
@@ -1736,10 +1776,11 @@ function AIModifyModal({ token, supply, onApply, onClose }) {
     }
   }
 
+  const M = provider === 'local' ? 'QWEN' : 'GEMINI'
   const phases = mode === 'A'
-    ? [['step_a',  'MODIFICA JSON — Gemini applica la modifica direttamente alla geometria']]
-    : [['step_b1', 'RISCRITTURA SCHEDA — Gemini aggiorna la scheda tecnica 3D'],
-       ['step_b2', 'GENERAZIONE JSON — Gemini ricostruisce la geometria dalla scheda aggiornata']]
+    ? [['step_a',  `MODIFICA JSON — ${M} applica la modifica direttamente alla geometria`]]
+    : [['step_b1', `RISCRITTURA SCHEDA — ${M} aggiorna la scheda tecnica 3D`],
+       ['step_b2', `GENERAZIONE JSON — ${M} ricostruisce la geometria dalla scheda aggiornata`]]
 
   const newCount = result?.geometry?.parts?.length ?? 0
   const delta    = newCount - oldCount
@@ -1767,6 +1808,29 @@ function AIModifyModal({ token, supply, onApply, onClose }) {
           onMouseLeave={e=>Object.assign(e.currentTarget.style,{borderColor:C.border,color:'#444'})}>
           ✕ CHIUDI
         </button>
+      </div>
+
+      {/* Provider selector */}
+      <div style={{ display:'flex', marginBottom:16 }}>
+        {[
+          ['gemini', 'GEMINI',       '#1a3a5a', '#4488cc', '#88ccff'],
+          ['local',  'QWEN (locale)','#2a1800', '#cc8833', '#ffaa44'],
+        ].map(([p, label, bg, border, col]) => (
+          <div key={p} onClick={() => !loading && setProvider(p)}
+            style={{ flex:1, padding:'9px 12px', cursor: loading ? 'default' : 'pointer', transition:'all 0.15s',
+              background: provider === p ? bg : C.bgCard,
+              border: `1px solid ${provider === p ? border : C.border}`,
+              borderRight: p === 'gemini' ? 'none' : undefined,
+              display:'flex', alignItems:'center', gap:8 }}>
+            <div style={{ width:9, height:9, borderRadius:'50%', flexShrink:0,
+              background: provider === p ? border : C.borderMed,
+              boxShadow: provider === p ? `0 0 6px ${border}` : 'none' }} />
+            <span style={{ color: provider === p ? col : C.txtDim,
+              fontSize:10, letterSpacing:2, fontFamily:'monospace' }}>
+              {label}
+            </span>
+          </div>
+        ))}
       </div>
 
       {/* Warning se non ha scheda */}

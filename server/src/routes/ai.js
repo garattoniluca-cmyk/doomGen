@@ -101,6 +101,69 @@ async function callGemini(apiKey, systemText, userText, opts = {}) {
   throw lastErr || new Error('Tutti i modelli Gemini non disponibili')
 }
 
+// ── LM Studio call helper (OpenAI-compatible — usato per modelli locali) ─────
+// opts: { imageBase64?: string, imageMime?: string, maxOutputTokens?: number }
+async function callLocalLM(systemText, userText, opts = {}) {
+  const base   = (process.env.LM_STUDIO_URL   || 'http://localhost:1234').replace(/\/$/, '')
+  const model  =  process.env.LM_STUDIO_MODEL  || 'qwen/qwen2.5-vl-7b'
+  const url    = `${base}/v1/chat/completions`
+
+  // Content del messaggio utente: testo + eventuale immagine
+  let userContent
+  if (opts.imageBase64) {
+    userContent = [
+      { type: 'text', text: userText },
+      { type: 'image_url', image_url: {
+          url: `data:${opts.imageMime || 'image/jpeg'};base64,${opts.imageBase64}`
+      }},
+    ]
+  } else {
+    userContent = userText
+  }
+
+  const body = {
+    model,
+    messages: [
+      { role: 'system', content: systemText },
+      { role: 'user',   content: userContent },
+    ],
+    temperature:  0.7,
+    max_tokens:   opts.maxOutputTokens || 32768,
+  }
+
+  let res
+  try {
+    res = await fetch(url, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    })
+  } catch (netErr) {
+    throw new Error(`LM Studio non raggiungibile (${base}): ${netErr.message}`)
+  }
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`LM Studio HTTP ${res.status}: ${err}`)
+  }
+
+  const data         = await res.json()
+  const text         = data?.choices?.[0]?.message?.content
+  const finishReason = data?.choices?.[0]?.finish_reason || 'stop'
+
+  if (!text) throw new Error('Risposta LM Studio vuota o malformata')
+  console.log(`[AI] LM Studio model: ${model} | finishReason: ${finishReason}`)
+  if (finishReason === 'length') console.warn('[AI] ATTENZIONE: risposta troncata per length')
+
+  return { text: text.trim(), model, finishReason, truncated: finishReason === 'length' }
+}
+
+// ── Dispatcher: instrada su Gemini o LM Studio in base al provider ────────────
+function callAI(provider, apiKey, systemText, userText, opts = {}) {
+  if (provider === 'local') return callLocalLM(systemText, userText, opts)
+  return callGemini(apiKey, systemText, userText, opts)
+}
+
 // ── Helper: scarica un'immagine da un URL e la converte in base64 ──────────────
 async function fetchImageAsBase64(url, timeoutMs = 10000) {
   const controller = new AbortController()
@@ -714,12 +777,13 @@ NON restituire solo le parti modificate — restituisci SEMPRE la scheda complet
 
 // ── POST /api/ai/modify-supply ─────────────────────────────────────────────────
 router.post('/modify-supply', requireAuth, async (req, res) => {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
+  const { expanded, geometry, description, modifyPrompt, mode, provider: rawProvider } = req.body
+  const provider = rawProvider === 'local' ? 'local' : 'gemini'
+  const apiKey   = process.env.GEMINI_API_KEY
+
+  if (provider === 'gemini' && (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE')) {
     return res.status(503).json({ error: 'GEMINI_API_KEY non configurata nel server' })
   }
-
-  const { expanded, geometry, description, modifyPrompt, mode } = req.body
   if (!modifyPrompt?.trim()) return res.status(400).json({ error: 'Prompt di modifica mancante' })
   if (!geometry?.parts?.length) return res.status(400).json({ error: 'Geometria corrente mancante' })
 
@@ -739,8 +803,8 @@ router.post('/modify-supply', requireAuth, async (req, res) => {
         'Aggiorna la scheda tecnica applicando la modifica. Restituisci la scheda completa aggiornata.',
       ].join('\n\n')
 
-      console.log('\n[AI] ── MODIFY B1: AGGIORNA SCHEDA ─────────────────────────')
-      const rB1 = await callGemini(apiKey, SYSTEM_MODIFY_EXPAND, userB1, { maxOutputTokens: 16384 })
+      console.log(`\n[AI] ── MODIFY B1: AGGIORNA SCHEDA [${provider}] ──────────────`)
+      const rB1 = await callAI(provider, apiKey, SYSTEM_MODIFY_EXPAND, userB1, { maxOutputTokens: 16384 })
       workingExpanded = rB1.text
       console.log('[AI] ── MODIFY B1: RESPONSE ─────────────────────────────────')
       console.log(workingExpanded)
@@ -766,8 +830,8 @@ router.post('/modify-supply', requireAuth, async (req, res) => {
       ].filter(Boolean).join('\n\n')
     }
 
-    console.log('\n[AI] ── MODIFY JSON ─────────────────────────────────────────')
-    const rJSON = await callGemini(apiKey, SYSTEM_JSON, userJSON)
+    console.log(`\n[AI] ── MODIFY JSON [${provider}] ──────────────────────────────`)
+    const rJSON = await callAI(provider, apiKey, SYSTEM_JSON, userJSON)
     const rawJson = rJSON.text
     console.log('[AI] ── MODIFY JSON: RESPONSE ───────────────────────────────')
     console.log(rawJson)
@@ -784,7 +848,7 @@ router.post('/modify-supply', requireAuth, async (req, res) => {
       console.warn('[AI] Parse fallito:', attempt.error)
       const userRepair = `Il seguente testo doveva essere JSON valido ma contiene errori di sintassi: "${attempt.error}".\n\nTesto originale:\n${rawJson}\n\nRestituisci SOLO il JSON corretto, senza markdown, senza commenti, senza testo extra.`
       try {
-        const rRepair = await callGemini(apiKey, SYSTEM_JSON, userRepair, { maxOutputTokens: 8192 })
+        const rRepair = await callAI(provider, apiKey, SYSTEM_JSON, userRepair, { maxOutputTokens: 8192 })
         chain.push({ step: 'repair', label: 'Riparazione JSON', system: SYSTEM_JSON, user: userRepair, response: rRepair.text })
         const retry = tryParseJson(rRepair.text)
         if (retry.ok) { parsed = retry.value }
@@ -810,12 +874,13 @@ router.post('/modify-supply', requireAuth, async (req, res) => {
 
 // ── POST /api/ai/generate-supply ───────────────────────────────────────────────
 router.post('/generate-supply', requireAuth, async (req, res) => {
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
+  const { description, imageBase64, imageMime, useWebSearch, provider: rawProvider } = req.body
+  const provider = rawProvider === 'local' ? 'local' : 'gemini'
+  const apiKey   = process.env.GEMINI_API_KEY
+
+  if (provider === 'gemini' && (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE')) {
     return res.status(503).json({ error: 'GEMINI_API_KEY non configurata nel server' })
   }
-
-  const { description, imageBase64, imageMime, useWebSearch } = req.body
   if (!description?.trim()) {
     return res.status(400).json({ error: 'Descrizione mancante' })
   }
@@ -828,14 +893,15 @@ router.post('/generate-supply', requireAuth, async (req, res) => {
     let effectiveImageMime = imageMime
     let imageSource = imageBase64 ? 'user' : null   // 'user' | 'auto' | null
 
-    // ── Step 0 (opzionale): ricerca web con grounding ──────────────────────────
-    if (useWebSearch) {
+    // ── Step 0 (opzionale): ricerca web con grounding — solo Gemini ───────────
+    // Il modello locale non ha accesso a internet, lo step viene saltato
+    if (useWebSearch && provider !== 'local') {
       const user0 = `Oggetto da cercare: "${description.trim()}"\n\nCerca riferimenti visivi reali e sintetizza per la progettazione 3D. Restituisci anche URL immagini alla fine come specificato.`
       console.log('\n[AI] ── STEP 0: WEB SEARCH ─────────────────────────────────')
       console.log(user0)
 
       try {
-        const r = await callGemini(apiKey, SYSTEM_WEB_RESEARCH, user0, {
+        const r = await callGemini(apiKey, SYSTEM_WEB_RESEARCH, user0, {  // sempre Gemini (grounding)
           tools: [{ google_search: {} }],
           maxOutputTokens: 4096,
         })
@@ -892,9 +958,9 @@ router.post('/generate-supply', requireAuth, async (req, res) => {
     let imageAnalysis = null
     if (effectiveImageB64) {
       const user05 = `Analizza l'immagine allegata in modo estremamente dettagliato seguendo la struttura richiesta. L'utente ha descritto il soggetto come: "${description.trim()}".`
-      console.log('\n[AI] ── STEP 0.5: ANALISI IMMAGINE ────────────────────────')
+      console.log(`\n[AI] ── STEP 0.5: ANALISI IMMAGINE [${provider}] ─────────────`)
       try {
-        const r05 = await callGemini(apiKey, SYSTEM_IMAGE_ANALYSIS, user05, {
+        const r05 = await callAI(provider, apiKey, SYSTEM_IMAGE_ANALYSIS, user05, {
           imageBase64: effectiveImageB64,
           imageMime:   effectiveImageMime,
           maxOutputTokens: 8192,
@@ -918,10 +984,10 @@ router.post('/generate-supply', requireAuth, async (req, res) => {
     let textAnalysis = null
     if (!effectiveImageB64) {
       const user03 = `Descrizione utente da strutturare: "${description.trim()}"\n\nAnalizza e struttura questa descrizione per la progettazione 3D seguendo esattamente il formato richiesto.`
-      console.log('\n[AI] ── STEP 0.3: ANALISI TESTO ────────────────────────────')
+      console.log(`\n[AI] ── STEP 0.3: ANALISI TESTO [${provider}] ──────────────`)
       console.log(user03)
       try {
-        const r03 = await callGemini(apiKey, SYSTEM_TEXT_ANALYSIS, user03, { maxOutputTokens: 4096 })
+        const r03 = await callAI(provider, apiKey, SYSTEM_TEXT_ANALYSIS, user03, { maxOutputTokens: 4096 })
         textAnalysis = r03.text
         console.log('[AI] ── STEP 0.3: RESPONSE ──────────────────────────────────')
         console.log(textAnalysis)
@@ -951,7 +1017,7 @@ router.post('/generate-supply', requireAuth, async (req, res) => {
     console.log(user1)
     console.log(effectiveImageB64 ? `[AI] + immagine (${imageSource}, ${effectiveImageB64.length} chars b64, mime=${effectiveImageMime})` : '[AI] nessuna immagine')
 
-    const r1 = await callGemini(apiKey, SYSTEM_EXPAND, user1, {
+    const r1 = await callAI(provider, apiKey, SYSTEM_EXPAND, user1, {
       imageBase64: effectiveImageB64,
       imageMime:   effectiveImageMime,
     })
@@ -976,10 +1042,10 @@ router.post('/generate-supply', requireAuth, async (req, res) => {
 
     // ── Step 2: genera il JSON geometry dalla descrizione espansa ──────────────
     const user2 = `Descrizione 3D dell'oggetto:\n${expanded}\n\nGenera il JSON esatto.`
-    console.log('\n[AI] ── STEP 2: USER ───────────────────────────────────────')
+    console.log(`\n[AI] ── STEP 2: JSON [${provider}] ─────────────────────────`)
     console.log(user2)
 
-    const r2 = await callGemini(apiKey, SYSTEM_JSON, user2)
+    const r2 = await callAI(provider, apiKey, SYSTEM_JSON, user2)
     const rawJson = r2.text
 
     console.log('[AI] ── STEP 2: RESPONSE ───────────────────────────────────')
@@ -995,9 +1061,9 @@ router.post('/generate-supply', requireAuth, async (req, res) => {
 
       // Retry: chiedi al modello di correggere il JSON
       const userRepair = `Il seguente testo doveva essere JSON valido ma contiene errori di sintassi: "${parseAttempt.error}".\n\nTesto originale:\n${rawJson}\n\nRestituisci SOLO il JSON corretto, senza markdown, senza commenti, senza testo extra. Mantieni tutti i dati (nome, parti, campi numerici) invariati, correggi solo la sintassi (virgole mancanti, parentesi, stringhe non chiuse).`
-      console.log('\n[AI] ── STEP 2.5: JSON REPAIR ─────────────────────────────')
+      console.log(`\n[AI] ── STEP 2.5: JSON REPAIR [${provider}] ────────────────`)
       try {
-        const rRepair = await callGemini(apiKey, SYSTEM_JSON, userRepair, { maxOutputTokens: 8192 })
+        const rRepair = await callAI(provider, apiKey, SYSTEM_JSON, userRepair, { maxOutputTokens: 8192 })
         const repairedText = rRepair.text
         console.log('[AI] ── STEP 2.5: RESPONSE ──────────────────────────────')
         console.log(repairedText)
