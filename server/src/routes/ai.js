@@ -773,7 +773,12 @@ TRAME PIETRA/LEGNO — REGOLA CRITICA:
     VIOLAZIONE DI QUESTA REGOLA = JSON inutilizzabile, non accettabile.
 
 OUTPUT:
-19. Restituisci SOLO il JSON valido — zero markdown (no \`\`\`), zero testo prima o dopo, zero commenti`
+19. Restituisci SOLO il JSON valido — zero markdown (no \`\`\`), zero testo prima o dopo, zero commenti
+20. La struttura radice deve essere ESATTAMENTE { "name": "...", "parts": [...] } — NON aggiungere chiavi extra
+    come "geometry", "meta", "v", "sounds", "lore", "generated_by". Solo "name" e "parts" al livello radice.
+    ERRATO:  { "geometry": { "parts": [...] } }
+    ERRATO:  { "v": 1, "meta": {...}, "geometry": { "parts": [...] } }
+    CORRETTO: { "name": "Colonna", "parts": [ { "id": "p01", ... } ] }`
 
 // ── Prompt: aggiornamento scheda tecnica per modifica (variante B step 1) ─────
 const SYSTEM_MODIFY_EXPAND = `Sei un art director 3D. Ricevi:
@@ -880,10 +885,22 @@ router.post('/modify-supply', requireAuth, async (req, res) => {
       if (attempt.repaired) console.log('[AI] JSON riparato localmente')
     }
 
+    const parts = normalizeParts(parsed)
+
+    // Guardrail: se il modello ha restituito 0 parti è quasi certamente un errore —
+    // molto meglio bloccare e mostrare il raw che applicare una geometria vuota
+    if (parts.length === 0) {
+      console.warn('[AI] GUARDRAIL: 0 parti nel risultato — risposta raw:', rawJson.slice(0, 300))
+      return res.status(422).json({
+        error: `Il modello ha restituito 0 parti (struttura JSON non riconosciuta o risposta vuota). Riprova o usa la variante B.`,
+        chain,
+      })
+    }
+
     res.json({
       name:     parsed.name || null,
       expanded: mode === 'B' ? workingExpanded : (expanded || null),
-      geometry: { v: 1, parts: normalizeParts(parsed) },
+      geometry: { v: 1, parts },
       chain,
     })
 
@@ -1113,6 +1130,14 @@ router.post('/generate-supply', requireAuth, async (req, res) => {
 
     // Normalizzazione parti
     const parts = normalizeParts(parsed)
+
+    if (parts.length === 0) {
+      console.warn('[AI] GUARDRAIL: 0 parti nel risultato — risposta raw:', rawJson.slice(0, 300))
+      return res.status(422).json({
+        error: `Il modello ha restituito 0 parti (struttura JSON non riconosciuta o risposta vuota). Riprova.`,
+        chain,
+      })
+    }
 
     res.json({
       name:     parsed.name || description.trim(),
