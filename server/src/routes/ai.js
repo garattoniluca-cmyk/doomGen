@@ -248,7 +248,13 @@ function sanitizeJsonish(s) {
 
 function normalizeParts(parsed) {
   const VALID_SHAPES = new Set(['box', 'sphere', 'cylinder', 'cone'])
-  return (parsed.parts || parsed).map((p, i) => ({
+  // Tolera vari formati: { parts:[...] } | [...] | { geometry:{ parts:[...] } } | altro
+  const arr = Array.isArray(parsed)               ? parsed
+             : Array.isArray(parsed?.parts)        ? parsed.parts
+             : Array.isArray(parsed?.geometry?.parts) ? parsed.geometry.parts
+             : []
+  if (!arr.length) console.warn('[AI] normalizeParts: array parti vuoto — parsed keys:', Object.keys(parsed || {}))
+  return arr.map((p, i) => ({
     id:    p.id    || `p${String(i + 1).padStart(2, '0')}`,
     label: p.label || `Parte ${i + 1}`,
     shape: VALID_SHAPES.has(p.shape) ? p.shape : 'box',
